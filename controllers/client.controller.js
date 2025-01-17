@@ -1,19 +1,19 @@
-let clientes = [
-    { id: 1, nombre: 'Juan Pérez', email: 'juan@example.com' },
-    { id: 2, nombre: 'María López', email: 'maria@example.com' },
+let clients = [
+    { id: 1, name: 'Juan Pérez', email: 'juan@example.com' },
+    { id: 2, name: 'María López', email: 'maria@example.com' },
 ];
 
 
-const getCLients = async (req, res) => res.json(clientes);
+const getCLients = async (req, res) => res.json(clients);
 
 
 const createClient = async (req, res) => {
     const nuevoCliente = {
-        id: clientes.length + 1,
-        nombre: req.body.nombre,
+        id: clients.length + 1,
+        name: req.body.name,
         email: req.body.email,
     };
-    clientes.push(nuevoCliente);
+    clients.push(nuevoCliente);
     res.json(nuevoCliente);
 };
 

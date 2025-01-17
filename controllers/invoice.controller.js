@@ -1,8 +1,8 @@
 
 
 let facturas = [
-    { id: 1, cliente: 'Juan Pérez', total: 1000 },
-    { id: 2, cliente: 'María López', total: 1500 },
+    { id: 1, client: 'Juan Pérez', total: 1000 },
+    { id: 2, client: 'María López', total: 1500 },
 ];
 
 const getInvoices =  async (req, res) => res.json(facturas);
@@ -10,7 +10,7 @@ const getInvoices =  async (req, res) => res.json(facturas);
 const createInvoices =  (req, res) => {
     const nuevaFactura = {
         id: facturas.length + 1,
-        cliente: req.body.cliente,
+        client: req.body.client,
         total: req.body.total,
     };
     facturas.push(nuevaFactura);
