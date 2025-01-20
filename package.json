@@ -6,8 +6,10 @@
     "start": "node index.js"
   },
   "dependencies": {
+    "cors": "^2.8.5",
     "express": "^4.21.2",
-    "cors": "^2.8.5"
+    "nodemailer": "^6.9.16",
+    "pdfkit": "^0.16.0"
   },
   "description": "Sistema de facturación backend"
 }

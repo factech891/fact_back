@@ -14,6 +14,7 @@ app.get('/api/invoices', invoiceController.getInvoices);
 app.post('/api/invoices', invoiceController.createInvoices);
 app.put('/api/invoices/:id', invoiceController.updateInvocies);
 app.delete('/api/invoices/:id', invoiceController.deleteInvoices);
+app.get('/api/invoices/:id/pdf', invoiceController.generateInvoicePDF);
 
 app.get('/api/clients', clientController.getCLients);
 app.post('/api/clients', clientController.createClient);
