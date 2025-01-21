@@ -1,21 +1,87 @@
-const PDFDocument = require('pdfkit');
-const fs = require('fs');
+const { generateInvoicePDF } = require('../utils/pdfGenerator');
+
+// Datos de empresa por defecto
+const empresaDefault = {
+    nombre: 'Tu Empresa',
+    direccion: 'Dirección de la empresa',
+    cuit: '30-12345678-9',
+    condicionIva: 'Responsable Inscripto'
+};
 
 let invoices = [
-    { id: 1, client: 'Juan Pérez', total: 1000, status: 'pendiente', series: '0001' },
-    { id: 2, client: 'María López', total: 1500, status: 'pagada', series: '0002' },
+    {
+        id: 1,
+        series: '0001',
+        empresa: empresaDefault,
+        client: {
+            nombre: 'Juan Pérez',
+            direccion: '',
+            cuit: '',
+            condicionIva: ''
+        },
+        fechaEmision: new Date(),
+        fechaVencimiento: new Date(new Date().setDate(new Date().getDate() + 30)),
+        condicionPago: 'Contado',
+        items: [
+            {
+                descripcion: 'Producto 1',
+                cantidad: 1,
+                precioUnitario: 1000,
+                subtotal: 1000
+            }
+        ],
+        subtotal: 1000,
+        descuento: 0,
+        iva: {
+            tasa: 21,
+            monto: 210
+        },
+        total: 1210,
+        status: 'pendiente',
+        observaciones: '',
+        infoBancaria: 'Datos bancarios para transferencias'
+    }
 ];
 
 const getInvoices = async (req, res) => res.json(invoices);
 
 const createInvoices = async (req, res) => {
+    const { client, total } = req.body;
+    
+    // Crear factura con estructura completa
     const newInvoice = {
         id: invoices.length + 1,
-        client: req.body.client,
-        total: req.body.total,
+        series: (invoices.length + 1).toString().padStart(4, '0'),
+        empresa: empresaDefault,
+        client: {
+            nombre: client.nombre || client,
+            direccion: client.direccion || '',
+            cuit: client.cuit || '',
+            condicionIva: client.condicionIva || ''
+        },
+        fechaEmision: new Date(),
+        fechaVencimiento: new Date(new Date().setDate(new Date().getDate() + 30)),
+        condicionPago: 'Contado',
+        items: [
+            {
+                descripcion: 'Producto/Servicio',
+                cantidad: 1,
+                precioUnitario: parseFloat(total),
+                subtotal: parseFloat(total)
+            }
+        ],
+        subtotal: parseFloat(total),
+        descuento: 0,
+        iva: {
+            tasa: 21,
+            monto: parseFloat(total) * 0.21
+        },
+        total: parseFloat(total) * 1.21,
         status: 'pendiente',
-        series: (invoices.length + 1).toString().padStart(4, '0'), // Generar número de serie automáticamente
+        observaciones: '',
+        infoBancaria: 'Datos bancarios para transferencias'
     };
+
     invoices.push(newInvoice);
     res.json(newInvoice);
 };
@@ -26,10 +92,33 @@ const updateInvocies = async (req, res) => {
     const index = invoices.findIndex(invoice => invoice.id === parseInt(id));
 
     if (index !== -1) {
-        invoices[index] = { ...invoices[index], client, total, status };
+        invoices[index] = {
+            ...invoices[index],
+            client: {
+                nombre: client.nombre || client,
+                direccion: client.direccion || invoices[index].client.direccion,
+                cuit: client.cuit || invoices[index].client.cuit,
+                condicionIva: client.condicionIva || invoices[index].client.condicionIva
+            },
+            items: [
+                {
+                    descripcion: 'Producto/Servicio',
+                    cantidad: 1,
+                    precioUnitario: parseFloat(total),
+                    subtotal: parseFloat(total)
+                }
+            ],
+            subtotal: parseFloat(total),
+            iva: {
+                tasa: 21,
+                monto: parseFloat(total) * 0.21
+            },
+            total: parseFloat(total) * 1.21,
+            status: status || invoices[index].status
+        };
         res.json(invoices[index]);
     } else {
-        res.status(404).json({ message: 'Invoice not found' });
+        res.status(404).json({ message: 'Factura no encontrada' });
     }
 };
 
@@ -38,27 +127,25 @@ const deleteInvoices = async (req, res) => {
     res.status(204).end();
 };
 
-// Generar PDF para una factura específica
-const generateInvoicePDF = async (req, res) => {
-    const { id } = req.params;
-    const invoice = invoices.find(invoice => invoice.id === parseInt(id));
+const generateInvoicePDFController = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const invoice = invoices.find(invoice => invoice.id === parseInt(id));
 
-    if (!invoice) {
-        return res.status(404).json({ message: 'Invoice not found' });
+        if (!invoice) {
+            return res.status(404).json({ message: 'Factura no encontrada' });
+        }
+
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename=factura_${invoice.series}.pdf`);
+
+        generateInvoicePDF(invoice, res);
+    } catch (error) {
+        console.error('Error generando PDF:', error);
+        if (!res.headersSent) {
+            res.status(500).json({ message: 'Error generando el PDF' });
+        }
     }
-
-    const pdfPath = `invoice_${invoice.series}.pdf`;
-    const doc = new PDFDocument();
-
-    doc.pipe(fs.createWriteStream(pdfPath));
-    doc.pipe(res);
-
-    doc.fontSize(20).text(`Factura N°: ${invoice.series}`, { align: 'center' });
-    doc.moveDown();
-    doc.fontSize(14).text(`Cliente: ${invoice.client}`);
-    doc.text(`Total: $${invoice.total}`);
-    doc.text(`Estado: ${invoice.status}`);
-    doc.end();
 };
 
 module.exports = {
@@ -66,5 +153,5 @@ module.exports = {
     createInvoices,
     updateInvocies,
     deleteInvoices,
-    generateInvoicePDF,
+    generateInvoicePDFController
 };
