@@ -24,6 +24,8 @@ app.delete('/api/clients/:id', clientController.deleteClient);
 app.get('/api/products', productController.getProducts);
 app.post('/api/products', productController.createProduct);
 app.put('/api/products/:id', productController.updateProduct);
+app.delete('/api/products/:id', productController.deleteProduct);
+
 
 app.use(express.static(path.join(__dirname, 'build')));
 
