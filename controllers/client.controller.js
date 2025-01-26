@@ -1,41 +1,59 @@
+// client.controller.js
 let clients = [
-    { id: 1, name: 'Juan Pérez', email: 'juan@example.com' },
-    { id: 2, name: 'María López', email: 'maria@example.com' },
-];
-
-const getCLients = async (req, res) => res.json(clients);
-
-const createClient = async (req, res) => {
+    {
+        id: 1,
+        nombre: 'Juan Pérez',
+        email: 'juan@example.com',
+        rif: 'V-12345678',
+        direccion: 'Caracas, Venezuela',
+        telefono: '0412-1234567'
+    }
+ ];
+ 
+ const getCLients = async (req, res) => res.json(clients);
+ 
+ const createClient = async (req, res) => {
+    const { nombre, email, rif, direccion, telefono } = req.body;
     const newClient = {
         id: clients.length + 1,
-        name: req.body.name,
-        email: req.body.email,
+        nombre,
+        email,
+        rif,
+        direccion,
+        telefono
     };
     clients.push(newClient);
     res.json(newClient);
-};
-
-const updateClient = async (req, res) => {
+ };
+ 
+ const updateClient = async (req, res) => {
     const { id } = req.params;
-    const { name, email } = req.body;
+    const { nombre, email, rif, direccion, telefono } = req.body;
     const index = clients.findIndex(client => client.id === parseInt(id));
-
+ 
     if (index !== -1) {
-        clients[index] = { id: parseInt(id), name, email };
+        clients[index] = {
+            id: parseInt(id),
+            nombre,
+            email,
+            rif,
+            direccion,
+            telefono
+        };
         res.json(clients[index]);
     } else {
         res.status(404).json({ message: 'Client not found' });
     }
-};
-
-const deleteClient = async (req, res) => {
+ };
+ 
+ const deleteClient = async (req, res) => {
     clients = clients.filter(client => client.id !== parseInt(req.params.id));
     res.status(204).end();
-};
-
-module.exports = {
+ };
+ 
+ module.exports = {
     getCLients,
     createClient,
     updateClient,
-    deleteClient,
-};
+    deleteClient
+ };
