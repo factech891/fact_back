@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "start": "nodemon index.js"
+    "start": "nodemon src/index.js",
+    "db": "docker-compose up"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "date-fns": "^4.1.0",
     "express": "^4.21.2",
+    "mongoose": "^8.9.7",
     "nodemailer": "^6.9.16",
     "nodemon": "^3.1.9",
     "pdfkit": "^0.16.0",

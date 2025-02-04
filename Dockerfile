@@ -1,20 +1,13 @@
-# Usar una imagen oficial de Node.js
-FROM node:18
+# FROM node:22-alpine
 
-# Crear y usar el directorio de trabajo en el contenedor
-WORKDIR /app
+# WORKDIR /usr/src/app
 
-# Copiar los archivos de configuración al contenedor
-COPY package*.json ./
+# COPY package*.json ./
 
-# Instalar las dependencias
-RUN npm install
+# RUN npm install
 
-# Copiar el resto del código al contenedor
-COPY . .
+# COPY ./src /usr/src/app/src
 
-# Exponer el puerto en el contenedor
-EXPOSE 5000
+# EXPOSE 3000
 
-# Comando para iniciar el servidor
-CMD ["node", "index.js"]
+# CMD ["node", "src/index.js"]

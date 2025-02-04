@@ -23,6 +23,7 @@ let clients = [
         telefono
     };
     clients.push(newClient);
+    //createClient(newClient);
     res.json(newClient);
  };
  
