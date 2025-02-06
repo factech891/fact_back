@@ -1,8 +1,15 @@
 const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
 
+const empresaDefault = {
+    nombre: 'Tu Empresa',
+    direccion: 'Dirección de la empresa',
+    rif: 'J-123456789',
+    telefono: '+58 424-1234567',
+    email: 'info@tuempresa.com'
+};
+
 const generateInvoicePDF = async (invoice, outputStream) => {
-    // Configurar documento
     const doc = new PDFDocument({ 
         margin: 50, 
         size: 'A4'
@@ -27,14 +34,14 @@ const generateInvoicePDF = async (invoice, outputStream) => {
     doc.fontSize(24)
        .fillColor('white')
        .font('Helvetica-Bold')
-       .text(invoice.empresa.nombre, 50, 40);
+       .text(empresaDefault.nombre, 50, 40);
 
     doc.fontSize(10)
        .font('Helvetica')
-       .text(invoice.empresa.direccion, 50, 70)
-       .text(`RIF: ${invoice.empresa.rif}`, 50, 85)
-       .text(`Tel: ${invoice.empresa.telefono}`, 50, 100)
-       .text(`Email: ${invoice.empresa.email}`, 50, 115);
+       .text(empresaDefault.direccion, 50, 70)
+       .text(`RIF: ${empresaDefault.rif}`, 50, 85)
+       .text(`Tel: ${empresaDefault.telefono}`, 50, 100)
+       .text(`Email: ${empresaDefault.email}`, 50, 115);
 
     // Información de factura (lado derecho)
     doc.save();
@@ -45,10 +52,10 @@ const generateInvoicePDF = async (invoice, outputStream) => {
     // QR Code
     try {
         const qrData = {
-            factura: invoice.series,
-            fecha: new Date(invoice.fechaEmision).toLocaleDateString(),
+            factura: invoice.number,
+            fecha: new Date(invoice.date).toLocaleDateString(),
             total: `${invoice.moneda} ${invoice.total.toFixed(2)}`,
-            verificacion: `FAC-${invoice.series}`
+            verificacion: `FAC-${invoice.number}`
         };
         const qrImage = await QRCode.toDataURL(JSON.stringify(qrData));
         doc.image(qrImage, 500, 40, { width: 40 });
@@ -60,10 +67,8 @@ const generateInvoicePDF = async (invoice, outputStream) => {
        .fontSize(20)
        .text('FACTURA', 370, 40)
        .fontSize(10)
-       .text(`N°: ${invoice.series}`, 370, 70)
-       .text(`Fecha: ${new Date(invoice.fechaEmision).toLocaleDateString()}`, 370, 85)
-       .text(`Vencimiento: ${new Date(invoice.fechaVencimiento).toLocaleDateString()}`, 370, 100);
-    doc.restore();
+       .text(`N°: ${invoice.number}`, 370, 70)
+       .text(`Fecha: ${new Date(invoice.date).toLocaleDateString()}`, 370, 85);
 
     // Información del cliente
     doc.rect(50, 170, doc.page.width - 100, 100)
@@ -77,10 +82,8 @@ const generateInvoicePDF = async (invoice, outputStream) => {
        .font('Helvetica')
        .fillColor(colors.text)
        .text(`Cliente: ${invoice.client.nombre}`, 70, 205)
-       .text(`RIF/CI: ${invoice.client.rif}`, 70, 220)
-       .text(`Dirección: ${invoice.client.direccion}`, 70, 235)
-       .text(`Teléfono: ${invoice.client.telefono}`, 350, 205)
-       .text(`Email: ${invoice.client.email}`, 350, 220);
+       .text(`RIF/CI: ${invoice.client.rif || 'N/A'}`, 70, 220)
+       .text(`Dirección: ${invoice.client.direccion || 'N/A'}`, 70, 235);
 
     // Tabla de productos
     let y = 300;
@@ -99,21 +102,22 @@ const generateInvoicePDF = async (invoice, outputStream) => {
 
     // Items
     invoice.items.forEach((item, i) => {
+        const product = item.product;
         doc.rect(50, y, doc.page.width - 100, 25)
            .fillColor(i % 2 === 0 ? colors.background : 'white')
            .fill();
 
         doc.fillColor(colors.text)
-           .text(item.codigo, 60, y + 7)
-           .text(item.descripcion, 130, y + 7)
-           .text(item.cantidad.toString(), 280, y + 7)
-           .text(`${invoice.moneda} ${item.precioUnitario.toFixed(2)}`, 350, y + 7)
-           .text(`${invoice.moneda} ${item.subtotal.toFixed(2)}`, 480, y + 7);
+           .text(product.codigo, 60, y + 7)
+           .text(product.nombre, 130, y + 7)
+           .text(item.quantity.toString(), 280, y + 7)
+           .text(`${invoice.moneda || 'USD'} ${item.price.toFixed(2)}`, 350, y + 7)
+           .text(`${invoice.moneda || 'USD'} ${(item.quantity * item.price).toFixed(2)}`, 480, y + 7);
 
         y += 25;
     });
 
-    // Totales con mejor formato
+    // Totales
     y += 20;
     const totalsBox = {
         x: 350,
@@ -122,13 +126,11 @@ const generateInvoicePDF = async (invoice, outputStream) => {
         padding: 15
     };
 
-    // Fondo para totales
     doc.rect(totalsBox.x, y, totalsBox.width, totalsBox.height)
        .fillColor('white')
        .strokeColor(colors.border)
        .fillAndStroke();
 
-    // Líneas divisorias y totales
     const xPos = totalsBox.x + totalsBox.padding;
     const totalWidth = totalsBox.width - (totalsBox.padding * 2);
 
@@ -138,13 +140,13 @@ const generateInvoicePDF = async (invoice, outputStream) => {
 
     // Subtotal
     doc.text('Subtotal:', xPos, y + 20);
-    doc.text(`${invoice.moneda} ${(invoice.subtotal || 0).toFixed(2)}`, 
+    doc.text(`${invoice.moneda || 'USD'} ${invoice.subtotal.toFixed(2)}`, 
              xPos, y + 20, 
              { width: totalWidth, align: 'right' });
 
     // IVA
     doc.text('IVA (16%):', xPos, y + 45);
-    doc.text(`${invoice.moneda} ${(invoice.iva?.monto || 0).toFixed(2)}`, 
+    doc.text(`${invoice.moneda || 'USD'} ${invoice.tax.toFixed(2)}`, 
              xPos, y + 45, 
              { width: totalWidth, align: 'right' });
 
@@ -152,25 +154,9 @@ const generateInvoicePDF = async (invoice, outputStream) => {
     doc.font('Helvetica-Bold')
        .fontSize(12);
     doc.text('TOTAL:', xPos, y + 80);
-    doc.text(`${invoice.moneda} ${(invoice.total || 0).toFixed(2)}`, 
+    doc.text(`${invoice.moneda || 'USD'} ${invoice.total.toFixed(2)}`, 
              xPos, y + 80, 
              { width: totalWidth, align: 'right' });
-
-             
-    // Footer
-    const footerTop = doc.page.height - 120;
-
-    doc.rect(50, footerTop, doc.page.width - 100, 70)
-       .fillColor(colors.background)
-       .fill();
-
-    doc.fillColor(colors.text)
-       .fontSize(9)
-       .text('Observaciones:', 60, footerTop + 10)
-       .fontSize(8)
-       .text(invoice.observaciones || '-', 60, footerTop + 25)
-       .text('Información Bancaria:', 60, footerTop + 40)
-       .text(invoice.infoBancaria || '-', 60, footerTop + 55);
 
     doc.end();
 };
