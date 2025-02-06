@@ -1,58 +1,130 @@
-// products.controller.js
-let products = [
-    { 
-        id: 1, 
-        codigo: 'P001',
-        nombre: 'Laptop', 
-        precio: 1000 
+// controllers/product.controller.js
+const mongoose = require('mongoose');
+const { 
+    getAllProducts, 
+    createProduct, 
+    getProductById, 
+    updateProduct, 
+    deleteProduct,
+    getProductByCode // Importamos la nueva función
+} = require('../services/product.service');
+
+const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+// Obtener todos los productos
+const getProducts = async (req, res) => {
+    try {
+        const products = await getAllProducts();
+        res.status(200).json(products);
+    } catch (error) {
+        console.error('Error al obtener productos:', error);
+        res.status(500).json({ error: error.message });
     }
- ];
- 
- const getProducts = async (req, res) => res.json(products);
- 
- const createProduct = async (req, res) => {
-    const { nombre, precio } = req.body;
-    const newProduct = {
-        id: products.length + 1,
-        codigo: `P${String(products.length + 1).padStart(3, '0')}`,
-        nombre,
-        precio
-    };
-    products.push(newProduct);
-    res.json(newProduct);
- };
- 
- const updateProduct = async (req, res) => {
-    const { id } = req.params;
-    const { nombre, precio } = req.body;
-    const productIndex = products.findIndex(product => product.id === parseInt(id));
- 
-    if (productIndex !== -1) {
-        products[productIndex] = { 
-            id: parseInt(id), 
-            codigo: products[productIndex].codigo,
-            nombre, 
-            precio 
-        };
-        res.json(products[productIndex]);
-    } else {
-        res.status(404).json({ message: 'Product not found' });
+};
+
+// Crear un nuevo producto
+const createProductController = async (req, res) => {
+    try {
+        const { nombre, precio, codigo } = req.body;
+
+        // Validar que todos los campos requeridos estén presentes
+        if (!nombre || !precio || !codigo) {
+            return res.status(400).json({ error: 'Nombre, precio y código son requeridos.' });
+        }
+
+        // Verificar si el código ya existe
+        const productWithSameCode = await getProductByCode(codigo);
+        if (productWithSameCode) {
+            return res.status(400).json({ error: 'El código ya está en uso por otro producto.' });
+        }
+
+        // Crear el producto
+        const newProduct = await createProduct({ nombre, precio, codigo });
+        res.status(201).json(newProduct);
+    } catch (error) {
+        console.error('Error al crear producto:', error);
+        res.status(500).json({ error: error.message });
     }
- };
- 
- const deleteProduct = async (req, res) => {
-    const productId = parseInt(req.params.id);
-    const productExists = products.some(product => product.id === productId);
-    if (!productExists) {
-        return res.status(404).json({ message: 'Product not found' });
+};
+
+// Obtener un producto por ID
+const getProductByIdController = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!isValidObjectId(id)) {
+            return res.status(400).json({ error: 'ID inválido.' });
+        }
+        const product = await getProductById(id);
+        if (!product) {
+            return res.status(404).json({ error: 'Producto no encontrado.' });
+        }
+        res.status(200).json(product);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
-    products = products.filter(product => product.id !== productId);
-    res.status(204).end();
- };
- 
- module.exports = {
+};
+
+// Actualizar un producto
+const updateProductController = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { nombre, precio, codigo } = req.body;
+
+        // Validar ID
+        if (!isValidObjectId(id)) {
+            return res.status(400).json({ error: 'ID inválido.' });
+        }
+
+        // Obtener el producto existente
+        const existingProduct = await getProductById(id);
+        if (!existingProduct) {
+            return res.status(404).json({ error: 'Producto no encontrado.' });
+        }
+
+        // Si no se proporciona un nuevo código, mantener el código existente
+        const updatedCodigo = codigo || existingProduct.codigo;
+
+        // Verificar si el nuevo código ya existe en otro producto
+        if (updatedCodigo !== existingProduct.codigo) {
+            const productWithSameCode = await getProductByCode(updatedCodigo);
+            if (productWithSameCode) {
+                return res.status(400).json({ error: 'El código ya está en uso por otro producto.' });
+            }
+        }
+
+        // Actualizar el producto
+        const updatedProduct = await updateProduct(id, { nombre, precio, codigo: updatedCodigo });
+
+        res.status(200).json(updatedProduct);
+    } catch (error) {
+        console.error('Error al actualizar el producto:', error);
+        res.status(500).json({ error: error.message });
+    }
+};
+
+// Eliminar un producto
+const deleteProductController = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!isValidObjectId(id)) {
+            return res.status(400).json({ error: 'ID inválido' });
+        }
+        const deletedProduct = await deleteProduct(id);
+
+        if (!deletedProduct) {
+            return res.status(404).json({ error: 'Producto no encontrado.' });
+        }
+        res.status(204).end();
+    } catch (error) {
+        console.error('Error al eliminar el producto:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+};
+
+module.exports = {
     getProducts,
-    createProduct,
-    updateProduct,
-    deleteProduct
- };
+    createProductController,
+    getProductByIdController,
+    updateProductController,
+    deleteProductController
+};

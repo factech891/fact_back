@@ -1,3 +1,4 @@
+// index.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -23,25 +24,25 @@ app.delete('/api/invoices/:id', invoiceController.deleteInvoices);
 app.get('/api/invoices/:id/pdf', invoiceController.generateInvoicePDFController);
 
 // Rutas para clients
-app.get('/api/clients', clientController.getClients); // Obtener todos los clientes
-app.post('/api/clients', clientController.createClientController); // Crear un cliente
-app.get('/api/clients/:id', clientController.getClientByIdController); // Obtener un cliente por ID
-app.put('/api/clients/:id', clientController.updateClientController); // Actualizar un cliente
-app.delete('/api/clients/:id', clientController.deleteClientController); // Eliminar un cliente
+app.get('/api/clients', clientController.getClients);
+app.post('/api/clients', clientController.createClientController);
+app.get('/api/clients/:id', clientController.getClientByIdController);
+app.put('/api/clients/:id', clientController.updateClientController);
+app.delete('/api/clients/:id', clientController.deleteClientController);
 
 // Rutas para products
 app.get('/api/products', productController.getProducts);
-app.post('/api/products', productController.createProduct);
-app.put('/api/products/:id', productController.updateProduct);
-app.delete('/api/products/:id', productController.deleteProduct);
+app.post('/api/products', productController.createProductController);
+app.get('/api/products/:id', productController.getProductByIdController);
+app.put('/api/products/:id', productController.updateProductController);
+app.delete('/api/products/:id', productController.deleteProductController);
 
-// Servir archivos estáticos (si es necesario)
+// Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'build')));
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
-// Conexión a MongoDB
 // Conexión a MongoDB
 async function conectarBD() {
     try {
@@ -49,13 +50,12 @@ async function conectarBD() {
         console.log('MongoDB Conectada');
     } catch (error) {
         console.error('Error al conectar a MongoDB:', error);
-        process.exit(1); // Detiene la aplicación si hay un error
+        process.exit(1);
     }
 }
 
 conectarBD();
 
-// Iniciar el servidor
 app.listen(port, '0.0.0.0', () => {
     console.log(`Servidor corriendo en http://0.0.0.0:${port}`);
 });
