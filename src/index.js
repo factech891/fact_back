@@ -1,4 +1,3 @@
-// index.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -18,9 +17,9 @@ app.use(express.json());
 
 // Rutas para invoices
 app.get('/api/invoices', invoiceController.getInvoices);
-app.post('/api/invoices', invoiceController.createInvoices);
-app.put('/api/invoices/:id', invoiceController.updateInvocies);
-app.delete('/api/invoices/:id', invoiceController.deleteInvoices);
+app.post('/api/invoices', invoiceController.createOrUpdateInvoice); // Cambiado
+app.put('/api/invoices/:id', invoiceController.updateInvoice); // Cambiado nombre de la función
+app.delete('/api/invoices/:id', invoiceController.deleteInvoice); // Cambiado nombre de la función
 app.get('/api/invoices/:id/pdf', invoiceController.generateInvoicePDFController);
 
 // Rutas para clients

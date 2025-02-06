@@ -1,4 +1,5 @@
-// invoice.controller.js
+// controllers/invoice.controller.js
+const Invoice = require('../models/invoice.model');
 const { generateInvoicePDF } = require('../utils/pdfGenerator');
 
 const empresaDefault = {
@@ -8,94 +9,118 @@ const empresaDefault = {
    condicionIva: 'Contribuyente'
 };
 
-let invoices = [];
-
-const getInvoices = async (req, res) => res.json(invoices);
-
-const createInvoices = async (req, res) => {
+exports.getInvoices = async (req, res) => {
    try {
-       const { cliente, items, subtotal, moneda, condicionesPago, diasCredito } = req.body;
-       
-       const ivaAmount = subtotal * 0.16;
-       const total = subtotal + ivaAmount;
-
-       const newInvoice = {
-           id: invoices.length + 1,
-           series: (invoices.length + 1).toString().padStart(4, '0'),
-           empresa: empresaDefault,
-           client: {
-               ...cliente
-           },
-           fechaEmision: new Date(),
-           fechaVencimiento: new Date(new Date().setDate(new Date().getDate() + (diasCredito || 30))),
-           condicionesPago: condicionesPago || 'Contado',
-           moneda: moneda || 'USD',
-           items: items || [],
-           subtotal: subtotal || 0,
-           descuento: 0,
-           iva: {
-               tasa: 16,
-               monto: ivaAmount
-           },
-           total: total,
-           status: 'pendiente',
-           observaciones: '',
-           infoBancaria: 'Datos bancarios para transferencias'
-       };
-
-       invoices.push(newInvoice);
-       res.json(newInvoice);
+       const invoices = await Invoice.find()
+           .populate('client')
+           .populate('items.product');
+       res.status(200).json(invoices);
    } catch (error) {
-       console.error('Error creating invoice:', error);
+       console.error('Error obteniendo facturas:', error);
        res.status(500).json({ message: 'Error interno del servidor' });
    }
 };
 
-const updateInvocies = async (req, res) => {
-   const { id } = req.params;
-   const { cliente, items, subtotal, status, moneda, condicionesPago } = req.body;
-   const index = invoices.findIndex(invoice => invoice.id === parseInt(id));
+exports.createOrUpdateInvoice = async (req, res) => {
+   try {
+       console.log('Datos recibidos del frontend:', req.body);
+       const { _id, ...invoiceData } = req.body;
 
-   if (index !== -1) {
-       const ivaAmount = subtotal * 0.16;
-       const total = subtotal + ivaAmount;
+       let invoice;
+       if (_id) {
+           invoice = await Invoice.findByIdAndUpdate(_id, invoiceData, { 
+               new: true,
+               runValidators: true 
+           });
+       } else {
+           // Generar número único de factura
+           const lastInvoice = await Invoice.findOne().sort({ number: -1 });
+           const nextNumber = lastInvoice ? parseInt(lastInvoice.number.slice(4)) + 1 : 1;
+           const invoiceNumber = `INV-${String(nextNumber).padStart(4, '0')}`;
 
-       invoices[index] = {
-           ...invoices[index],
-           client: cliente,
-           items: items || [],
-           subtotal: subtotal || 0,
-           iva: {
-               tasa: 16,
-               monto: ivaAmount
-           },
-           total: total,
-           moneda: moneda || invoices[index].moneda,
-           condicionesPago: condicionesPago || invoices[index].condicionesPago,
-           status: status || invoices[index].status
-       };
-       res.json(invoices[index]);
-   } else {
-       res.status(404).json({ message: 'Factura no encontrada' });
+           invoice = new Invoice({
+               number: invoiceNumber,
+               client: invoiceData.client,
+               items: invoiceData.items.map(item => ({
+                   product: item.product,
+                   quantity: item.quantity,
+                   price: item.price,
+                   subtotal: item.quantity * item.price
+               })),
+               subtotal: invoiceData.subtotal,
+               tax: invoiceData.tax,
+               total: invoiceData.total,
+               status: 'draft',
+               moneda: invoiceData.moneda || 'USD',
+               condicionesPago: invoiceData.condicionesPago || 'Contado',
+               diasCredito: invoiceData.diasCredito || 30
+           });
+
+           await invoice.save();
+       }
+
+       // Poblar los datos del cliente y productos
+       await invoice.populate('client');
+       await invoice.populate('items.product');
+
+       res.status(201).json(invoice);
+   } catch (error) {
+       console.error('Error al guardar/actualizar la factura:', error);
+       res.status(400).json({ error: error.message });
    }
 };
 
-const deleteInvoices = async (req, res) => {
-   invoices = invoices.filter(invoice => invoice.id !== parseInt(req.params.id));
-   res.status(204).end();
-};
-
-const generateInvoicePDFController = async (req, res) => {
+exports.updateInvoice = async (req, res) => {
    try {
        const { id } = req.params;
-       const invoice = invoices.find(invoice => invoice.id === parseInt(id));
+       const updateData = req.body;
+
+       const invoice = await Invoice.findByIdAndUpdate(
+           id, 
+           updateData,
+           { new: true, runValidators: true }
+       ).populate('client').populate('items.product');
+
+       if (!invoice) {
+           return res.status(404).json({ message: 'Factura no encontrada' });
+       }
+
+       res.status(200).json(invoice);
+   } catch (error) {
+       console.error('Error actualizando factura:', error);
+       res.status(500).json({ message: error.message });
+   }
+};
+
+exports.deleteInvoice = async (req, res) => {
+   try {
+       const { id } = req.params;
+       const deletedInvoice = await Invoice.findByIdAndDelete(id);
+
+       if (!deletedInvoice) {
+           return res.status(404).json({ message: 'Factura no encontrada' });
+       }
+
+       res.status(204).end();
+   } catch (error) {
+       console.error('Error eliminando factura:', error);
+       res.status(500).json({ message: error.message });
+   }
+};
+
+exports.generateInvoicePDFController = async (req, res) => {
+   try {
+       const { id } = req.params;
+       const invoice = await Invoice.findById(id)
+           .populate('client')
+           .populate('items.product');
 
        if (!invoice) {
            return res.status(404).json({ message: 'Factura no encontrada' });
        }
 
        res.setHeader('Content-Type', 'application/pdf');
-       res.setHeader('Content-Disposition', `attachment; filename=factura_${invoice.series}.pdf`);
+       res.setHeader('Content-Disposition', `attachment; filename=factura_${invoice.number}.pdf`);
 
        generateInvoicePDF(invoice, res);
    } catch (error) {
@@ -104,12 +129,4 @@ const generateInvoicePDFController = async (req, res) => {
            res.status(500).json({ message: 'Error generando el PDF' });
        }
    }
-};
-
-module.exports = {
-   getInvoices,
-   createInvoices,
-   updateInvocies,
-   deleteInvoices,
-   generateInvoicePDFController
 };
