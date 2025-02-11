@@ -1,6 +1,5 @@
 // controllers/invoice.controller.js
 const Invoice = require('../models/invoice.model');
-const { generateInvoicePDF } = require('../utils/pdfGenerator');
 
 const empresaDefault = {
    nombre: 'Tu Empresa',
@@ -108,25 +107,3 @@ exports.deleteInvoice = async (req, res) => {
    }
 };
 
-exports.generateInvoicePDFController = async (req, res) => {
-   try {
-       const { id } = req.params;
-       const invoice = await Invoice.findById(id)
-           .populate('client')
-           .populate('items.product');
-
-       if (!invoice) {
-           return res.status(404).json({ message: 'Factura no encontrada' });
-       }
-
-       res.setHeader('Content-Type', 'application/pdf');
-       res.setHeader('Content-Disposition', `attachment; filename=factura_${invoice.number}.pdf`);
-
-       generateInvoicePDF(invoice, res);
-   } catch (error) {
-       console.error('Error generando PDF:', error);
-       if (!res.headersSent) {
-           res.status(500).json({ message: 'Error generando el PDF' });
-       }
-   }
-};

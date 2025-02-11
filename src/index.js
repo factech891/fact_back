@@ -20,7 +20,6 @@ app.get('/api/invoices', invoiceController.getInvoices);
 app.post('/api/invoices', invoiceController.createOrUpdateInvoice); // Cambiado
 app.put('/api/invoices/:id', invoiceController.updateInvoice); // Cambiado nombre de la función
 app.delete('/api/invoices/:id', invoiceController.deleteInvoice); // Cambiado nombre de la función
-app.get('/api/invoices/:id/pdf', invoiceController.generateInvoicePDFController);
 
 // Rutas para clients
 app.get('/api/clients', clientController.getClients);
