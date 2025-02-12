@@ -20,7 +20,6 @@ const updateCompanyInfo = async (companyData) => {
     return await Company.create(companyData);
   }
 
-  // Actualizar todos los campos proporcionados
   Object.keys(companyData).forEach(key => {
     company[key] = companyData[key];
   });
@@ -30,14 +29,24 @@ const updateCompanyInfo = async (companyData) => {
 
 const uploadCompanyLogo = async (filePath) => {
   try {
-    const company = await Company.findOne();
+    let company = await Company.findOne();
+    
+    // Si no existe la empresa, crear una por defecto
     if (!company) {
-      throw new Error('Empresa no encontrada');
+      company = await Company.create({
+        nombre: 'Empresa',
+        rif: 'Por definir',
+        email: 'por@definir.com'
+      });
     }
 
     // Si existe un logo previo, eliminarlo
     if (company.logoId) {
-      await cloudinary.uploader.destroy(company.logoId);
+      try {
+        await cloudinary.uploader.destroy(company.logoId);
+      } catch (error) {
+        console.error('Error eliminando logo anterior:', error);
+      }
     }
 
     // Subir nueva imagen
@@ -56,24 +65,30 @@ const uploadCompanyLogo = async (filePath) => {
   }
 };
 
-const updateThemeSettings = async (settings) => {
+const deleteCompany = async () => {
   const company = await Company.findOne();
+  
   if (!company) {
-    throw new Error('Empresa no encontrada');
+    throw new Error('No existe información de empresa para eliminar');
   }
 
-  // Actualizar configuraciones del tema
-  if (settings.temaFactura) company.temaFactura = settings.temaFactura;
-  if (settings.colorPrimario) company.colorPrimario = settings.colorPrimario;
-  if (settings.colorSecundario) company.colorSecundario = settings.colorSecundario;
-  if (settings.tamanoFuente) company.tamanoFuente = settings.tamanoFuente;
+  // Si hay un logo, eliminarlo de cloudinary
+  if (company.logoId) {
+    try {
+      await cloudinary.uploader.destroy(company.logoId);
+    } catch (error) {
+      console.error('Error eliminando logo:', error);
+    }
+  }
 
-  return await company.save();
+  // Eliminar la empresa
+  await company.deleteOne();
+  return true;
 };
 
 module.exports = {
   getCompany,
   updateCompanyInfo,
   uploadCompanyLogo,
-  updateThemeSettings
+  deleteCompany
 };

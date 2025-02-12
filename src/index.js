@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -61,6 +62,7 @@ app.get('/api/company', companyController.getCompanyController);
 app.put('/api/company', companyController.updateCompanyController);
 app.post('/api/company/logo', upload.single('logo'), companyController.uploadLogoController);
 app.put('/api/company/theme', companyController.updateThemeController);
+app.delete('/api/company', companyController.deleteCompanyController);
 
 // Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'build')));
