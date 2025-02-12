@@ -1,9 +1,18 @@
 require('dotenv').config();
+
+// Verificar las variables de entorno al inicio
+console.log('Verificando variables de entorno de Cloudinary:');
+console.log('CLOUDINARY_CLOUD_NAME:', process.env.CLOUDINARY_CLOUD_NAME || 'No configurado');
+console.log('CLOUDINARY_API_KEY:', process.env.CLOUDINARY_API_KEY ? 'Configurado' : 'No configurado');
+console.log('CLOUDINARY_API_SECRET:', process.env.CLOUDINARY_API_SECRET ? 'Configurado' : 'No configurado');
+
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const mongoose = require('mongoose');
 const multer = require('multer');
+const fs = require('fs');
+const path = require('path');
+
 const invoiceController = require('./controllers/invoice.controller');
 const clientController = require('./controllers/client.controller');
 const productController = require('./controllers/product.controller');
@@ -27,7 +36,6 @@ const storage = multer.diskStorage({
 const upload = multer({ storage: storage });
 
 // Asegurar que existe el directorio de uploads
-const fs = require('fs');
 if (!fs.existsSync('uploads')) {
   fs.mkdirSync('uploads');
 }
@@ -67,22 +75,22 @@ app.delete('/api/company', companyController.deleteCompanyController);
 // Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'build')));
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'build', 'index.html'));
+  res.sendFile(path.join(__dirname, 'build', 'index.html'));
 });
 
 // Conexión a MongoDB
 async function conectarBD() {
-    try {
-        await mongoose.connect(mongoDb);
-        console.log('MongoDB Conectada');
-    } catch (error) {
-        console.error('Error al conectar a MongoDB:', error);
-        process.exit(1);
-    }
+  try {
+    await mongoose.connect(mongoDb);
+    console.log('MongoDB Conectada');
+  } catch (error) {
+    console.error('Error al conectar a MongoDB:', error);
+    process.exit(1);
+  }
 }
 
 conectarBD();
 
 app.listen(port, '0.0.0.0', () => {
-    console.log(`Servidor corriendo en http://0.0.0.0:${port}`);
+  console.log(`Servidor corriendo en http://0.0.0.0:${port}`);
 });
