@@ -50,6 +50,7 @@ app.get('/api/invoices', invoiceController.getInvoices);
 app.post('/api/invoices', invoiceController.createOrUpdateInvoice);
 app.put('/api/invoices/:id', invoiceController.updateInvoice);
 app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
+app.get('/api/invoices/dashboard-data', invoiceController.getDashboardData);
 
 // Rutas para clients
 app.get('/api/clients', clientController.getClients);

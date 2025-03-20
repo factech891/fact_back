@@ -107,3 +107,60 @@ exports.deleteInvoice = async (req, res) => {
    }
 };
 
+// Nuevo método para datos de dashboard
+exports.getDashboardData = async (req, res) => {
+    try {
+        const invoices = await Invoice.find().populate('client');
+        
+        // Procesar para facturación diaria con conteo correcto
+        const facturacionDiaria = [];
+        const facturasPorDia = {};
+        
+        // Agrupar facturas por día
+        invoices.forEach(invoice => {
+            const fecha = new Date(invoice.date);
+            const dia = fecha.getDate();
+            const mes = fecha.getMonth();
+            
+            // Abreviaturas en español para los meses
+            const mesesAbr = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+            const key = `${dia} ${mesesAbr[mes]}`;
+            
+            if (!facturasPorDia[key]) {
+                facturasPorDia[key] = {
+                    name: key,
+                    USD: 0,
+                    VES: 0,
+                    total: 0,
+                    facturas: 0
+                };
+            }
+            
+            // Incrementar conteo de facturas
+            facturasPorDia[key].facturas += 1;
+            
+            // Sumar montos según la moneda
+            if (invoice.moneda === 'USD') {
+                facturasPorDia[key].USD += invoice.total;
+                facturasPorDia[key].total += invoice.total;
+            } else if (invoice.moneda === 'VES') {
+                facturasPorDia[key].VES += invoice.total;
+                // Para el total en USD, necesitarías convertir usando una tasa
+                // Por ahora, solo sumamos el valor en VES
+                facturasPorDia[key].total += invoice.total;
+            }
+        });
+        
+        // Convertir a array para el frontend
+        Object.values(facturasPorDia).forEach(data => {
+            facturacionDiaria.push(data);
+        });
+        
+        res.status(200).json({
+            facturacionDiaria
+        });
+    } catch (error) {
+        console.error('Error obteniendo datos de dashboard:', error);
+        res.status(500).json({ message: 'Error interno del servidor' });
+    }
+};
