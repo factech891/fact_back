@@ -51,6 +51,10 @@ app.post('/api/invoices', invoiceController.createOrUpdateInvoice);
 app.put('/api/invoices/:id', invoiceController.updateInvoice);
 app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
 app.get('/api/invoices/dashboard-data', invoiceController.getDashboardData);
+// Ruta para actualizar el estado de una factura
+app.patch('/api/invoices/:id/status', async (req, res) => {
+    invoiceController.updateInvoiceStatus(req, res);
+});
 
 // Rutas para clients
 app.get('/api/clients', clientController.getClients);

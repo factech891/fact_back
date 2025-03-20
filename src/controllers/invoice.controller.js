@@ -107,7 +107,36 @@ exports.deleteInvoice = async (req, res) => {
    }
 };
 
-// Nuevo método para datos de dashboard
+// Nuevo método para actualizar el estado de una factura
+exports.updateInvoiceStatus = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+        
+        // Validar que el estado sea uno de los permitidos
+        const allowedStatuses = ['draft', 'pending', 'paid', 'partial', 'overdue', 'cancelled'];
+        if (!allowedStatuses.includes(status)) {
+            return res.status(400).json({ message: 'Estado no válido' });
+        }
+        
+        const invoice = await Invoice.findByIdAndUpdate(
+            id,
+            { status },
+            { new: true, runValidators: true }
+        ).populate('client').populate('items.product');
+        
+        if (!invoice) {
+            return res.status(404).json({ message: 'Factura no encontrada' });
+        }
+        
+        res.status(200).json(invoice);
+    } catch (error) {
+        console.error('Error actualizando estado de factura:', error);
+        res.status(500).json({ message: error.message });
+    }
+};
+
+// Método para datos de dashboard
 exports.getDashboardData = async (req, res) => {
     try {
         const invoices = await Invoice.find().populate('client');

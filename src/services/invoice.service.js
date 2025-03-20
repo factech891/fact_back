@@ -34,11 +34,21 @@ const getInvoiceByNumber = async (number) => {
    return Invoice.findOne({ number });
 };
 
+// Nuevo método para actualizar estado
+const updateInvoiceStatus = async (id, status) => {
+   return Invoice.findByIdAndUpdate(
+       id,
+       { status },
+       { new: true, runValidators: true }
+   ).populate('client').populate('items.product');
+};
+
 module.exports = {
    getAllInvoices,
    getInvoiceById,
    createInvoice,
    updateInvoice,
    deleteInvoice,
-   getInvoiceByNumber
+   getInvoiceByNumber,
+   updateInvoiceStatus
 };
