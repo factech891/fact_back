@@ -27,6 +27,33 @@ exports.createOrUpdateInvoice = async (req, res) => {
 
        let invoice;
        if (_id) {
+           // Para actualizaciones, también necesitamos recalcular el impuesto
+           if (invoiceData.items) {
+               // Procesar items asegurando que se maneja correctamente la exención
+               const processedItems = invoiceData.items.map(item => ({
+                   product: item.product,
+                   quantity: item.quantity,
+                   price: item.price,
+                   taxExempt: item.taxExempt || false,
+                   subtotal: item.quantity * item.price
+               }));
+               
+               // Recalcular subtotal y impuesto
+               const subtotal = processedItems.reduce((sum, item) => sum + item.subtotal, 0);
+               const tax = processedItems.reduce((sum, item) => {
+                   if (item.taxExempt) {
+                       return sum; // No agregar impuesto si está exento
+                   } else {
+                       return sum + (item.subtotal * 0.16); // 16% de IVA
+                   }
+               }, 0);
+               
+               invoiceData.items = processedItems;
+               invoiceData.subtotal = subtotal;
+               invoiceData.tax = tax;
+               invoiceData.total = subtotal + tax;
+           }
+           
            invoice = await Invoice.findByIdAndUpdate(_id, invoiceData, { 
                new: true,
                runValidators: true 
@@ -37,19 +64,38 @@ exports.createOrUpdateInvoice = async (req, res) => {
            const nextNumber = lastInvoice ? parseInt(lastInvoice.number.slice(4)) + 1 : 1;
            const invoiceNumber = `INV-${String(nextNumber).padStart(4, '0')}`;
 
-           invoice = new Invoice({
-               number: invoiceNumber,
-               client: invoiceData.client,
-               items: invoiceData.items.map(item => ({
+           // Asegurarse de procesar las exenciones de IVA
+           const processedItems = invoiceData.items.map(item => {
+               return {
                    product: item.product,
                    quantity: item.quantity,
                    price: item.price,
+                   taxExempt: item.taxExempt || false, // Asegurar que se procese la exención
                    subtotal: item.quantity * item.price
-               })),
-               subtotal: invoiceData.subtotal,
-               tax: invoiceData.tax,
-               total: invoiceData.total,
-               status: 'draft',
+               };
+           });
+           
+           // Calcular el subtotal y el impuesto teniendo en cuenta las exenciones
+           const subtotal = processedItems.reduce((sum, item) => sum + item.subtotal, 0);
+           const tax = processedItems.reduce((sum, item) => {
+               if (item.taxExempt) {
+                   return sum; // No agregar impuesto si está exento
+               } else {
+                   return sum + (item.subtotal * 0.16); // 16% de IVA
+               }
+           }, 0);
+           
+           console.log('Impuesto calculado:', tax);
+           console.log('Items con exenciones:', processedItems);
+
+           invoice = new Invoice({
+               number: invoiceNumber,
+               client: invoiceData.client,
+               items: processedItems,
+               subtotal: subtotal,
+               tax: tax,
+               total: subtotal + tax,
+               status: invoiceData.status || 'draft',
                moneda: invoiceData.moneda || 'USD',
                condicionesPago: invoiceData.condicionesPago || 'Contado',
                diasCredito: invoiceData.diasCredito || 30
@@ -73,6 +119,33 @@ exports.updateInvoice = async (req, res) => {
    try {
        const { id } = req.params;
        const updateData = req.body;
+       
+       // Para actualizaciones, también necesitamos recalcular el impuesto si hay cambios en los items
+       if (updateData.items) {
+           // Procesar items
+           const processedItems = updateData.items.map(item => ({
+               product: item.product,
+               quantity: item.quantity,
+               price: item.price,
+               taxExempt: item.taxExempt || false,
+               subtotal: item.quantity * item.price
+           }));
+           
+           // Recalcular subtotal y impuesto
+           const subtotal = processedItems.reduce((sum, item) => sum + item.subtotal, 0);
+           const tax = processedItems.reduce((sum, item) => {
+               if (item.taxExempt) {
+                   return sum; // No agregar impuesto si está exento
+               } else {
+                   return sum + (item.subtotal * 0.16); // 16% de IVA
+               }
+           }, 0);
+           
+           updateData.items = processedItems;
+           updateData.subtotal = subtotal;
+           updateData.tax = tax;
+           updateData.total = subtotal + tax;
+       }
 
        const invoice = await Invoice.findByIdAndUpdate(
            id, 
@@ -107,7 +180,7 @@ exports.deleteInvoice = async (req, res) => {
    }
 };
 
-// Nuevo método para actualizar el estado de una factura
+// Método para actualizar el estado de una factura
 exports.updateInvoiceStatus = async (req, res) => {
     try {
         const { id } = req.params;

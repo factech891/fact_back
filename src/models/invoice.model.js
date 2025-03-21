@@ -20,6 +20,10 @@ const itemSchema = new mongoose.Schema({
         type: Number, 
         required: [true, 'El subtotal es requerido'],
         min: [0, 'El subtotal no puede ser negativo']
+    },
+    taxExempt: {
+        type: Boolean,
+        default: false
     }
 });
 
@@ -80,6 +84,11 @@ const invoiceSchema = new mongoose.Schema({
         type: Number,
         default: 30,
         min: [0, 'Los días de crédito no pueden ser negativos']
+    },
+    documentType: {
+        type: String,
+        enum: ['invoice', 'quote', 'proforma', 'draft'],
+        default: 'invoice'
     }
 }, {
     timestamps: true
