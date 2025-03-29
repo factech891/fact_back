@@ -17,6 +17,7 @@ const invoiceController = require('./controllers/invoice.controller');
 const clientController = require('./controllers/client.controller');
 const productController = require('./controllers/product.controller');
 const companyController = require('./controllers/company.controller');
+const documentController = require('./controllers/document.controller');
 
 const app = express();
 const port = 5002;
@@ -76,6 +77,16 @@ app.put('/api/company', companyController.updateCompanyController);
 app.post('/api/company/logo', upload.single('logo'), companyController.uploadLogoController);
 app.put('/api/company/theme', companyController.updateThemeController);
 app.delete('/api/company', companyController.deleteCompanyController);
+
+// Rutas para documentos
+app.get('/api/documents', documentController.getDocuments);
+app.get('/api/documents/pending', documentController.getPendingDocuments);
+app.get('/api/documents/:id', documentController.getDocument);
+app.post('/api/documents', documentController.createDocument);
+app.put('/api/documents/:id', documentController.updateDocument);
+app.delete('/api/documents/:id', documentController.deleteDocument);
+app.patch('/api/documents/:id/status', documentController.updateDocumentStatus);
+app.post('/api/documents/:id/convert-to-invoice', documentController.convertToInvoice);
 
 // Servir archivos estáticos
 app.use(express.static(path.join(__dirname, 'build')));
