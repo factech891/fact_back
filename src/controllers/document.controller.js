@@ -1,6 +1,8 @@
 // controllers/document.controller.js
 const Document = require('../models/document.model');
+const Invoice = require('../models/invoice.model'); // <--- IMPORTANTE: Importar el modelo Invoice
 const documentService = require('../services/document.service');
+const invoiceService = require('../services/invoice.service');
 
 exports.getDocuments = async (req, res) => {
    try {
@@ -46,7 +48,7 @@ exports.createDocument = async (req, res) => {
 
        // Generar número único de documento según su tipo
        const prefix = getDocumentPrefix(documentData.type);
-       const lastDocument = await Document.findOne({ type: documentData.type }).sort({ documentNumber: -1 });
+       const lastDocument = await Document.findOne({ type: documentData.type }).sort({ createdAt: -1 });
        let nextNumber = 1;
        
        if (lastDocument && lastDocument.documentNumber) {
@@ -80,16 +82,15 @@ exports.createDocument = async (req, res) => {
        }, 0);
 
        // Crear el documento
-       const newDocument = {
+       const newDocumentData = {
            ...documentData,
-           documentNumber,
            items: processedItems,
            subtotal,
            taxAmount,
            total: subtotal + taxAmount
        };
 
-       const document = await documentService.createDocument(newDocument);
+       const document = await documentService.createDocument(newDocumentData);
        
        // Poblar los datos del cliente y productos
        await document.populate('client');
@@ -98,7 +99,7 @@ exports.createDocument = async (req, res) => {
        res.status(201).json(document);
    } catch (error) {
        console.error('Error al crear documento:', error);
-       res.status(400).json({ error: error.message });
+       res.status(400).json({ message: error.message || 'Error al procesar la solicitud' });
    }
 };
 
@@ -141,7 +142,7 @@ exports.updateDocument = async (req, res) => {
        res.status(200).json(document);
    } catch (error) {
        console.error(`Error actualizando documento ${req.params.id}:`, error);
-       res.status(500).json({ message: error.message });
+       res.status(500).json({ message: error.message || 'Error interno del servidor' });
    }
 };
 
@@ -157,7 +158,7 @@ exports.deleteDocument = async (req, res) => {
        res.status(204).end();
    } catch (error) {
        console.error(`Error eliminando documento ${req.params.id}:`, error);
-       res.status(500).json({ message: error.message });
+       res.status(500).json({ message: error.message || 'Error interno del servidor' });
    }
 };
 
@@ -168,11 +169,11 @@ exports.updateDocumentStatus = async (req, res) => {
         
         // Validar que el estado sea uno de los permitidos
         const allowedStatuses = ['DRAFT', 'SENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'];
-        if (!allowedStatuses.includes(status)) {
-            return res.status(400).json({ message: 'Estado no válido' });
+        if (!status || !allowedStatuses.includes(status.toUpperCase())) {
+            return res.status(400).json({ message: 'Estado no válido proporcionado' });
         }
         
-        const document = await documentService.updateDocumentStatus(id, status);
+        const document = await documentService.updateDocumentStatus(id, status.toUpperCase());
         
         if (!document) {
             return res.status(404).json({ message: 'Documento no encontrado' });
@@ -181,79 +182,91 @@ exports.updateDocumentStatus = async (req, res) => {
         res.status(200).json(document);
     } catch (error) {
         console.error(`Error actualizando estado de documento ${req.params.id}:`, error);
-        res.status(500).json({ message: error.message });
+        res.status(500).json({ message: error.message || 'Error interno del servidor' });
     }
 };
 
+// --- Función Modificada ---
 exports.convertToInvoice = async (req, res) => {
     try {
         const { id } = req.params;
-        const invoiceData = req.body;
-        
-        // Primero obtener el documento para convertirlo a factura
-        const document = await documentService.getDocumentById(id);
-        
+        const invoiceData = req.body; // Datos del modal
+
+        const document = await documentService.getDocumentById(id); // Obtener documento original
+
         if (!document) {
             return res.status(404).json({ message: 'Documento no encontrado' });
         }
-        
         if (document.status === 'CONVERTED') {
             return res.status(400).json({ message: 'Este documento ya ha sido convertido a factura' });
         }
-        
-        // Crear objeto para la nueva factura
-        const invoiceController = require('./invoice.controller');
-        
-        // Preparar datos de la factura a partir del documento
+
+        // --- INICIO: Generar número de factura ---
+        const invoicePrefix = 'FACT'; // O el prefijo que uses para facturas
+        const lastInvoice = await Invoice.findOne().sort({ createdAt: -1 }); // Buscar la última factura creada
+        let nextInvoiceNumber = 1;
+        if (lastInvoice && lastInvoice.number) {
+            const match = lastInvoice.number.match(/^[A-Z]+-(\d+)$/);
+            if (match && match[1]) {
+                nextInvoiceNumber = parseInt(match[1]) + 1;
+            }
+        }
+        const generatedInvoiceNumber = `${invoicePrefix}-${String(nextInvoiceNumber).padStart(4, '0')}`;
+        // --- FIN: Generar número de factura ---
+
+
+        // --- Preparar datos para la nueva factura ---
         const invoiceToCreate = {
-            client: document.client._id,
+            // Datos del MODAL o valores por defecto
+            status: invoiceData.status ? invoiceData.status.toLowerCase() : 'draft',
+            date: invoiceData.date || new Date(),
+            paymentTerms: invoiceData.paymentTerms || document.paymentTerms || 'Contado',
+            creditDays: invoiceData.creditDays !== undefined ? invoiceData.creditDays : (document.creditDays || 0),
+
+            // Datos del DOCUMENTO ORIGINAL (o recalculados/generados)
+            number: generatedInvoiceNumber, // <-- Número de factura generado
+            client: document.client._id || document.client,
             items: document.items.map(item => ({
-                product: item.product._id,
+                product: item.product._id || item.product,
                 quantity: item.quantity,
                 price: item.price,
-                taxExempt: item.taxExempt
+                taxExempt: item.taxExempt,
+                subtotal: item.subtotal // <-- Incluir subtotal del item original
             })),
             subtotal: document.subtotal,
-            tax: document.taxAmount,
+            tax: document.taxAmount, // Asegúrate que el modelo Invoice usa 'tax'
             total: document.total,
             moneda: document.currency,
-            condicionesPago: document.paymentTerms,
-            diasCredito: document.creditDays,
-            status: 'draft'
+            notes: document.notes,
+            terms: document.terms,
+            originalDocument: document._id
         };
-        
-        // Crear la factura usando el controlador de facturas
-        // Aquí estamos simulando una solicitud a la API de facturas
-        const mockReq = { body: invoiceToCreate };
-        const mockRes = {
-            status: function(code) {
-                this.statusCode = code;
-                return this;
-            },
-            json: function(data) {
-                this.data = data;
-                return this;
-            }
-        };
-        
-        await invoiceController.createOrUpdateInvoice(mockReq, mockRes);
-        
-        if (mockRes.statusCode !== 201) {
-            throw new Error('Error al crear factura');
+        // --- Fin preparación datos ---
+
+        // Crear la factura usando el SERVICIO
+        const newInvoice = await invoiceService.createInvoice(invoiceToCreate);
+
+        if (!newInvoice) {
+             throw new Error('La creación de la factura falló.');
         }
-        
-        // Actualizar el documento como convertido y guardar referencia a la factura
-        const updatedDocument = await documentService.convertToInvoice(id, mockRes.data._id);
-        
+
+        // Actualizar el documento original usando el SERVICIO
+        const updatedDocument = await documentService.convertToInvoice(id, newInvoice._id);
+
         res.status(200).json({
+            message: 'Documento convertido a factura exitosamente.',
             document: updatedDocument,
-            invoice: mockRes.data
+            invoice: newInvoice
         });
     } catch (error) {
+        // Captura errores de validación y otros
         console.error(`Error convirtiendo documento ${req.params.id} a factura:`, error);
-        res.status(500).json({ message: error.message });
+        // Si es un error de validación de Mongoose, el mensaje puede ser útil
+        const errorMessage = error.errors ? error._message : (error.message || 'Error interno al convertir a factura');
+        res.status(error.name === 'ValidationError' ? 400 : 500).json({ message: errorMessage, details: error.errors });
     }
 };
+// --- Fin Función Modificada ---
 
 // Función para obtener prefijo según tipo de documento
 function getDocumentPrefix(type) {
@@ -268,3 +281,6 @@ function getDocumentPrefix(type) {
             return 'DOC';
     }
 }
+
+// Exportar todas las funciones
+module.exports = exports;
