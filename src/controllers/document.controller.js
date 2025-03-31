@@ -202,7 +202,7 @@ exports.convertToInvoice = async (req, res) => {
         }
 
         // --- INICIO: Generar número de factura ---
-        const invoicePrefix = 'FACT'; // O el prefijo que uses para facturas
+        const invoicePrefix = 'INV'; // CAMBIADO: Estandarizado a INV
         const lastInvoice = await Invoice.findOne().sort({ createdAt: -1 }); // Buscar la última factura creada
         let nextInvoiceNumber = 1;
         if (lastInvoice && lastInvoice.number) {
@@ -219,7 +219,7 @@ exports.convertToInvoice = async (req, res) => {
         const invoiceToCreate = {
             // Datos del MODAL o valores por defecto
             status: invoiceData.status ? invoiceData.status.toLowerCase() : 'draft',
-            date: invoiceData.date || new Date(),
+            date: new Date(), // CAMBIADO: Siempre usamos la fecha actual, independientemente de lo que venga en invoiceData
             paymentTerms: invoiceData.paymentTerms || document.paymentTerms || 'Contado',
             creditDays: invoiceData.creditDays !== undefined ? invoiceData.creditDays : (document.creditDays || 0),
 
