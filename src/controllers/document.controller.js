@@ -18,11 +18,11 @@ exports.getDocument = async (req, res) => {
     try {
         const { id } = req.params;
         const document = await documentService.getDocumentById(id);
-        
+
         if (!document) {
             return res.status(404).json({ message: 'Documento no encontrado' });
         }
-        
+
         res.status(200).json(document);
     } catch (error) {
         console.error(`Error obteniendo documento ${req.params.id}:`, error);
@@ -41,6 +41,7 @@ exports.getPendingDocuments = async (req, res) => {
     }
 };
 
+// --- Función Modificada ---
 exports.createDocument = async (req, res) => {
    try {
        console.log('Datos recibidos del frontend:', req.body);
@@ -50,7 +51,7 @@ exports.createDocument = async (req, res) => {
        const prefix = getDocumentPrefix(documentData.type);
        const lastDocument = await Document.findOne({ type: documentData.type }).sort({ createdAt: -1 });
        let nextNumber = 1;
-       
+
        if (lastDocument && lastDocument.documentNumber) {
            // Extraer número del formato PREFIX-0001
            const match = lastDocument.documentNumber.match(/^[A-Z]+-(\d+)$/);
@@ -58,7 +59,7 @@ exports.createDocument = async (req, res) => {
                nextNumber = parseInt(match[1]) + 1;
            }
        }
-       
+
        const documentNumber = `${prefix}-${String(nextNumber).padStart(4, '0')}`;
        documentData.documentNumber = documentNumber;
 
@@ -70,7 +71,7 @@ exports.createDocument = async (req, res) => {
            taxExempt: item.taxExempt || false,
            subtotal: (item.quantity || 1) * (item.price || 0)
        }));
-       
+
        // Calcular totales
        const subtotal = processedItems.reduce((sum, item) => sum + item.subtotal, 0);
        const taxAmount = processedItems.reduce((sum, item) => {
@@ -87,11 +88,13 @@ exports.createDocument = async (req, res) => {
            items: processedItems,
            subtotal,
            taxAmount,
-           total: subtotal + taxAmount
+           total: subtotal + taxAmount,
+           // Fijar explícitamente la fecha actual
+           date: new Date() // <-- Cambio aplicado aquí
        };
 
        const document = await documentService.createDocument(newDocumentData);
-       
+
        // Poblar los datos del cliente y productos
        await document.populate('client');
        await document.populate('items.product');
@@ -102,12 +105,13 @@ exports.createDocument = async (req, res) => {
        res.status(400).json({ message: error.message || 'Error al procesar la solicitud' });
    }
 };
+// --- Fin Función Modificada ---
 
 exports.updateDocument = async (req, res) => {
    try {
        const { id } = req.params;
        const updateData = req.body;
-       
+
        // Recalcular totales si hay cambios en los items
        if (updateData.items) {
            const processedItems = updateData.items.map(item => ({
@@ -117,7 +121,7 @@ exports.updateDocument = async (req, res) => {
                taxExempt: item.taxExempt || false,
                subtotal: (item.quantity || 1) * (item.price || 0)
            }));
-           
+
            const subtotal = processedItems.reduce((sum, item) => sum + item.subtotal, 0);
            const taxAmount = processedItems.reduce((sum, item) => {
                if (item.taxExempt) {
@@ -126,7 +130,7 @@ exports.updateDocument = async (req, res) => {
                    return sum + (item.subtotal * 0.16); // 16% de IVA
                }
            }, 0);
-           
+
            updateData.items = processedItems;
            updateData.subtotal = subtotal;
            updateData.taxAmount = taxAmount;
@@ -166,19 +170,19 @@ exports.updateDocumentStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
-        
+
         // Validar que el estado sea uno de los permitidos
         const allowedStatuses = ['DRAFT', 'SENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'];
         if (!status || !allowedStatuses.includes(status.toUpperCase())) {
             return res.status(400).json({ message: 'Estado no válido proporcionado' });
         }
-        
+
         const document = await documentService.updateDocumentStatus(id, status.toUpperCase());
-        
+
         if (!document) {
             return res.status(404).json({ message: 'Documento no encontrado' });
         }
-        
+
         res.status(200).json(document);
     } catch (error) {
         console.error(`Error actualizando estado de documento ${req.params.id}:`, error);
@@ -186,7 +190,6 @@ exports.updateDocumentStatus = async (req, res) => {
     }
 };
 
-// --- Función Modificada ---
 exports.convertToInvoice = async (req, res) => {
     try {
         const { id } = req.params;
@@ -266,7 +269,6 @@ exports.convertToInvoice = async (req, res) => {
         res.status(error.name === 'ValidationError' ? 400 : 500).json({ message: errorMessage, details: error.errors });
     }
 };
-// --- Fin Función Modificada ---
 
 // Función para obtener prefijo según tipo de documento
 function getDocumentPrefix(type) {
