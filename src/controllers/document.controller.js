@@ -4,6 +4,30 @@ const Invoice = require('../models/invoice.model'); // <--- IMPORTANTE: Importar
 const documentService = require('../services/document.service');
 const invoiceService = require('../services/invoice.service');
 
+// Función auxiliar para normalizar fechas
+function normalizeDate(dateString) {
+  if (!dateString) return new Date();
+  
+  // Si es un string de fecha (YYYY-MM-DD)
+  if (typeof dateString === 'string') {
+    const parts = dateString.split('-');
+    if (parts.length === 3) {
+      // Crear la fecha con la hora fijada al mediodía para evitar problemas de zona horaria
+      return new Date(
+        parseInt(parts[0]), 
+        parseInt(parts[1]) - 1, // Meses en JS son 0-indexados
+        parseInt(parts[2]),
+        12, 0, 0 // Fijar la hora al mediodía
+      );
+    }
+  }
+  
+  // Si ya es un objeto Date o si el string no tiene formato esperado
+  const date = new Date(dateString);
+  date.setHours(12, 0, 0, 0); // Fijar al mediodía para consistencia
+  return date;
+}
+
 exports.getDocuments = async (req, res) => {
    try {
        const documents = await documentService.getAllDocuments();
@@ -41,7 +65,6 @@ exports.getPendingDocuments = async (req, res) => {
     }
 };
 
-// --- Función Modificada ---
 exports.createDocument = async (req, res) => {
    try {
        console.log('Datos recibidos del frontend:', req.body);
@@ -89,9 +112,12 @@ exports.createDocument = async (req, res) => {
            subtotal,
            taxAmount,
            total: subtotal + taxAmount,
-           // Fijar explícitamente la fecha actual
-           date: new Date() // <-- Cambio aplicado aquí
+           // Normalizar fechas explícitamente
+           date: normalizeDate(documentData.date),
+           expiryDate: documentData.expiryDate ? normalizeDate(documentData.expiryDate) : null
        };
+
+       console.log('Fecha normalizada antes de guardar:', newDocumentData.date);
 
        const document = await documentService.createDocument(newDocumentData);
 
@@ -105,7 +131,6 @@ exports.createDocument = async (req, res) => {
        res.status(400).json({ message: error.message || 'Error al procesar la solicitud' });
    }
 };
-// --- Fin Función Modificada ---
 
 exports.updateDocument = async (req, res) => {
    try {
@@ -135,6 +160,15 @@ exports.updateDocument = async (req, res) => {
            updateData.subtotal = subtotal;
            updateData.taxAmount = taxAmount;
            updateData.total = subtotal + taxAmount;
+       }
+
+       // Normalizar fechas si están presentes
+       if (updateData.date) {
+           updateData.date = normalizeDate(updateData.date);
+           console.log('Fecha normalizada en updateDocument:', updateData.date);
+       }
+       if (updateData.expiryDate) {
+           updateData.expiryDate = normalizeDate(updateData.expiryDate);
        }
 
        const document = await documentService.updateDocument(id, updateData);
@@ -222,7 +256,7 @@ exports.convertToInvoice = async (req, res) => {
         const invoiceToCreate = {
             // Datos del MODAL o valores por defecto
             status: invoiceData.status ? invoiceData.status.toLowerCase() : 'draft',
-            date: new Date(), // CAMBIADO: Siempre usamos la fecha actual, independientemente de lo que venga en invoiceData
+            date: normalizeDate(new Date()), // Usar nuestra función de normalización
             paymentTerms: invoiceData.paymentTerms || document.paymentTerms || 'Contado',
             creditDays: invoiceData.creditDays !== undefined ? invoiceData.creditDays : (document.creditDays || 0),
 
