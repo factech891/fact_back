@@ -1,3 +1,4 @@
+// models/invoice.model.js
 const mongoose = require('mongoose');
 
 const itemSchema = new mongoose.Schema({
@@ -73,7 +74,7 @@ const invoiceSchema = new mongoose.Schema({
     moneda: {
         type: String,
         enum: ['USD', 'VES'],
-        default: 'USD'
+        default: 'VES'  // Cambiado a VES como moneda por defecto
     },
     condicionesPago: {
         type: String,
@@ -89,6 +90,15 @@ const invoiceSchema = new mongoose.Schema({
         type: String,
         enum: ['invoice', 'quote', 'proforma', 'draft'],
         default: 'invoice'
+    },
+    // Nuevos campos para notas y términos
+    notes: {
+        type: String,
+        default: ''
+    },
+    terms: {
+        type: String,
+        default: ''
     }
 }, {
     timestamps: true

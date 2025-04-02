@@ -24,6 +24,10 @@ exports.createOrUpdateInvoice = async (req, res) => {
    try {
        console.log('Datos recibidos del frontend:', req.body);
        const { _id, ...invoiceData } = req.body;
+       
+       // Verificar si hay notas y términos
+       console.log('Notas recibidas:', invoiceData.notes);
+       console.log('Términos recibidos:', invoiceData.terms);
 
        let invoice;
        if (_id) {
@@ -96,12 +100,19 @@ exports.createOrUpdateInvoice = async (req, res) => {
                tax: tax,
                total: subtotal + tax,
                status: invoiceData.status || 'draft',
-               moneda: invoiceData.moneda || 'USD',
+               moneda: invoiceData.moneda || 'VES', // Cambiado a VES como default
                condicionesPago: invoiceData.condicionesPago || 'Contado',
-               diasCredito: invoiceData.diasCredito || 30
+               diasCredito: invoiceData.diasCredito || 30,
+               // Agregar los campos notes y terms
+               notes: invoiceData.notes || '',
+               terms: invoiceData.terms || ''
            });
 
            await invoice.save();
+           console.log('Factura guardada con notas y términos:', {
+               notes: invoice.notes,
+               terms: invoice.terms
+           });
        }
 
        // Poblar los datos del cliente y productos
@@ -119,6 +130,8 @@ exports.updateInvoice = async (req, res) => {
    try {
        const { id } = req.params;
        const updateData = req.body;
+       
+       console.log('Actualizando factura - datos recibidos:', updateData);
        
        // Para actualizaciones, también necesitamos recalcular el impuesto si hay cambios en los items
        if (updateData.items) {
@@ -185,6 +198,8 @@ exports.updateInvoiceStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const { status } = req.body;
+        
+        console.log('Actualizando estado de factura ID:', id, 'Nuevo estado:', status);
         
         // Validar que el estado sea uno de los permitidos
         const allowedStatuses = ['draft', 'pending', 'paid', 'partial', 'overdue', 'cancelled'];
