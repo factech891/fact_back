@@ -25,6 +25,15 @@ exports.createOrUpdateInvoice = async (req, res) => {
        console.log('Datos recibidos del frontend:', req.body);
        const { _id, ...invoiceData } = req.body;
        
+       // Asegurar que la fecha se guarde correctamente
+       if (invoiceData.date) {
+           // Si la fecha viene como string YYYY-MM-DD
+           if (typeof invoiceData.date === 'string' && !invoiceData.date.includes('T')) {
+               // Añadir la hora 12:00:00 para evitar problemas de zona horaria
+               invoiceData.date = `${invoiceData.date}T12:00:00.000Z`;
+           }
+       }
+       
        // Verificar si hay notas y términos
        console.log('Notas recibidas:', invoiceData.notes);
        console.log('Términos recibidos:', invoiceData.terms);
@@ -95,6 +104,7 @@ exports.createOrUpdateInvoice = async (req, res) => {
            invoice = new Invoice({
                number: invoiceNumber,
                client: invoiceData.client,
+               date: invoiceData.date, // Usar la fecha procesada
                items: processedItems,
                subtotal: subtotal,
                tax: tax,
@@ -132,6 +142,15 @@ exports.updateInvoice = async (req, res) => {
        const updateData = req.body;
        
        console.log('Actualizando factura - datos recibidos:', updateData);
+       
+       // Asegurar que la fecha se guarde correctamente
+       if (updateData.date) {
+           // Si la fecha viene como string YYYY-MM-DD
+           if (typeof updateData.date === 'string' && !updateData.date.includes('T')) {
+               // Añadir la hora 12:00:00 para evitar problemas de zona horaria
+               updateData.date = `${updateData.date}T12:00:00.000Z`;
+           }
+       }
        
        // Para actualizaciones, también necesitamos recalcular el impuesto si hay cambios en los items
        if (updateData.items) {
