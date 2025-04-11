@@ -6,6 +6,14 @@ console.log('CLOUDINARY_CLOUD_NAME:', process.env.CLOUDINARY_CLOUD_NAME || 'No c
 console.log('CLOUDINARY_API_KEY:', process.env.CLOUDINARY_API_KEY ? 'Configurado' : 'No configurado');
 console.log('CLOUDINARY_API_SECRET:', process.env.CLOUDINARY_API_SECRET ? 'Configurado' : 'No configurado');
 
+// Configuración de Cloudinary
+const cloudinary = require('cloudinary').v2;
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
 const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
@@ -24,7 +32,7 @@ const port = 5002;
 const urlMongo = "mongodb://localhost:27017/testing";
 const mongoDb = process.env.MONGODB_URI || urlMongo;
 
-// Configuración de Multer para subida de archivos
+// Configuración de Multer para subida de archivos locales
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     cb(null, 'uploads/');
@@ -74,7 +82,17 @@ app.delete('/api/products/:id', productController.deleteProductController);
 // Rutas para company
 app.get('/api/company', companyController.getCompanyController);
 app.put('/api/company', companyController.updateCompanyController);
-app.post('/api/company/logo', upload.single('logo'), companyController.uploadLogoController);
+app.post('/api/company/logo', upload.single('logo'), async (req, res) => {
+    try {
+        // Subir el logo a Cloudinary
+        const resultado = await cloudinary.uploader.upload(req.file.path, {
+            folder: 'logos_empresas'
+        });
+        res.json({ mensaje: 'Logo subido exitosamente', url: resultado.secure_url });
+    } catch (error) {
+        res.status(500).json({ mensaje: 'Error al subir el logo', error });
+    }
+});
 app.put('/api/company/theme', companyController.updateThemeController);
 app.delete('/api/company', companyController.deleteCompanyController);
 
