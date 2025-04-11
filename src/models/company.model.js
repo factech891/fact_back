@@ -40,6 +40,10 @@ const companySchema = new mongoose.Schema(
       type: String, 
       required: false 
     },
+    localFilePath: { 
+      type: String, 
+      required: false 
+    },
     // Configuración de facturas como campos simples
     temaFactura: { 
       type: String, 

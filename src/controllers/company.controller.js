@@ -6,6 +6,9 @@ const {
   updateThemeSettings,
   deleteCompany 
 } = require('../services/company.service');
+const cloudinary = require('cloudinary').v2; // Asegúrate de tener esto importado
+const fs = require('fs');
+const path = require('path');
 
 // Obtener información de la empresa
 const getCompanyController = async (req, res) => {
@@ -39,15 +42,80 @@ const updateCompanyController = async (req, res) => {
   }
 };
 
-// Subir logo de la empresa
+// Eliminar el logo - ¡FUNCIÓN MEJORADA CON TODO EL FLOW!
+const deleteLogoController = async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log(`Intentando eliminar logo con ID: ${id}`);
+    
+    // 1. Buscamos la empresa para obtener info del archivo local
+    const company = await getCompany();
+    
+    if (!company) {
+      return res.status(404).json({ error: 'No se encontró información de la empresa' });
+    }
+    
+    // 2. Borramos de Cloudinary si hay ID
+    if (id) {
+      try {
+        await cloudinary.uploader.destroy(id);
+        console.log(`Logo eliminado de Cloudinary: ${id}`);
+      } catch (cloudError) {
+        console.error('Error al eliminar de Cloudinary:', cloudError);
+        // Continuamos de todas formas para borrar localmente
+      }
+    }
+    
+    // 3. Borramos archivo local si existe una ruta
+    if (company.localFilePath) {
+      const uploadsDir = path.join(__dirname, '..', 'uploads');
+      const filePath = path.join(uploadsDir, company.localFilePath);
+      
+      console.log(`Verificando archivo local: ${filePath}`);
+      
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`Archivo local borrado: ${filePath}`);
+      }
+    }
+    
+    // 4. Actualizamos la empresa quitando referencias al logo
+    company.logoUrl = null;
+    company.logoId = null;
+    company.localFilePath = null; // Asegúrate de que este campo exista en tu modelo
+    
+    const updatedCompany = await updateCompanyInfo(company);
+    
+    res.status(200).json({ 
+      success: true, 
+      message: 'Logo eliminado completamente',
+      company: updatedCompany 
+    });
+  } catch (error) {
+    console.error('Error al eliminar logo:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+// Subir logo de la empresa - MEJORADO PA' GUARDAR LA RUTA LOCAL
 const uploadLogoController = async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No se ha proporcionado ninguna imagen' });
     }
 
-    const updatedCompany = await uploadCompanyLogo(req.file.path);
+    console.log(`Archivo recibido: ${req.file.path}, filename: ${req.file.filename}`);
+    
+    // Guardamos también el nombre del archivo local
+    const logoData = {
+      filePath: req.file.path,
+      fileName: req.file.filename // Esto es importante pa' borrar después
+    };
+
+    const updatedCompany = await uploadCompanyLogo(logoData);
+    
     res.status(200).json({
+      mensaje: 'Logo subido exitosamente',
       logoUrl: updatedCompany.logoUrl,
       logoId: updatedCompany.logoId
     });
@@ -96,5 +164,6 @@ module.exports = {
   updateCompanyController,
   uploadLogoController,
   updateThemeController,
-  deleteCompanyController
+  deleteCompanyController,
+  deleteLogoController // ¡OJO! Añadimos esta exportación que faltaba
 };
