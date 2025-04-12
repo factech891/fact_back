@@ -104,8 +104,6 @@ function cleanOrphanFiles() {
 }
 
 
-// Configuración de Multer para subida de archivos locales
-// Esta ruta relativa 'uploads/' funciona si inicias el servidor desde la raíz del proyecto (fact_backend)
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
     const dest = 'uploads/'; // Relativo al CWD (probablemente la raíz del proyecto)
@@ -122,8 +120,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-// Asegurar que existe el directorio de uploads (relativo al CWD)
-// Esto también funciona si inicias desde la raíz del proyecto
+
 const uploadsPathRelative = 'uploads';
 if (!fs.existsSync(uploadsPathRelative)) {
   fs.mkdirSync(uploadsPathRelative);
@@ -227,15 +224,6 @@ app.post('/api/company/logo', upload.single('logo'), async (req, res) => {
         company.logoId = resultado.public_id;
         company.localFilePath = localFilename; // Guardar solo el nombre del archivo
         await company.save();
-
-
-        // Opcional: Eliminar el archivo local subido AHORA si ya está en Cloudinary y no lo necesitas más localmente
-        // try {
-        //     fs.unlinkSync(req.file.path);
-        //     console.log('Archivo local temporal eliminado después de subir a Cloudinary:', localFilename);
-        // } catch(unlinkErr) {
-        //      console.error("Error eliminando archivo local temporal:", unlinkErr);
-        // }
 
 
         res.json({
@@ -343,8 +331,6 @@ app.delete('/api/documents/:id', documentController.deleteDocument);
 app.patch('/api/documents/:id/status', documentController.updateDocumentStatus);
 app.post('/api/documents/:id/convert-to-invoice', documentController.convertToInvoice);
 
-// Servir archivos estáticos de la build de React/Frontend
-// Asume que la carpeta 'build' está en la raíz del proyecto (al mismo nivel que 'src' y 'uploads')
 app.use(express.static(path.join(__dirname, '..', 'build')));
 app.get('*', (req, res) => {
   // Si ninguna ruta API coincide, sirve el index.html para el routing del lado del cliente
@@ -389,4 +375,4 @@ async function startServer() {
     });
 }
 
-startServer(); // Llamar a la función para iniciar todo
+startServer(); 
