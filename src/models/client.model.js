@@ -1,8 +1,14 @@
-// models/client.model.js
+// models/client.model.js (modificado)
 const mongoose = require('mongoose');
 
 const clientSchema = new mongoose.Schema(
   {
+    // Campo nuevo para multiempresa
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Company',
+      required: true
+    },
     // Datos básicos
     nombre: { 
       type: String, 
@@ -12,7 +18,6 @@ const clientSchema = new mongoose.Schema(
     rif: { 
       type: String, 
       required: [true, 'El RIF/Cédula es requerido'], 
-      unique: true,
       trim: true
     },
     tipoPersona: {
@@ -30,7 +35,6 @@ const clientSchema = new mongoose.Schema(
     email: { 
       type: String, 
       required: [true, 'El email es requerido'], 
-      unique: true,
       trim: true,
       lowercase: true
     },
@@ -102,5 +106,10 @@ const clientSchema = new mongoose.Schema(
     timestamps: true // Agrega createdAt y updatedAt automáticamente
   }
 );
+
+// Índice compuesto para evitar duplicados de RIF dentro de la misma compañía
+clientSchema.index({ companyId: 1, rif: 1 }, { unique: true });
+// Índice compuesto para evitar duplicados de email dentro de la misma compañía
+clientSchema.index({ companyId: 1, email: 1 }, { unique: true });
 
 module.exports = mongoose.model('Client', clientSchema);

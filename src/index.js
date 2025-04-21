@@ -26,6 +26,11 @@ const clientController = require('./controllers/client.controller');
 const productController = require('./controllers/product.controller');
 const companyController = require('./controllers/company.controller');
 const documentController = require('./controllers/document.controller');
+const authController = require('./controllers/auth.controller');
+const userController = require('./controllers/user.controller');
+const subscriptionController = require('./controllers/subscription.controller');
+const authMiddleware = require('./middleware/auth.middleware');
+const subscriptionMiddleware = require('./middleware/subscription.middleware');
 
 const app = express();
 const port = 5002;
@@ -136,37 +141,68 @@ app.use(express.json());
 // Servir archivos estáticos desde 'uploads' (relativo al CWD)
 app.use('/uploads', express.static(uploadsPathRelative));
 
-// Rutas para invoices
-app.get('/api/invoices', invoiceController.getInvoices);
-app.post('/api/invoices', invoiceController.createOrUpdateInvoice);
-app.put('/api/invoices/:id', invoiceController.updateInvoice);
-app.delete('/api/invoices/:id', invoiceController.deleteInvoice);
-app.get('/api/invoices/dashboard-data', invoiceController.getDashboardData);
-// Ruta para actualizar el estado de una factura
-app.patch('/api/invoices/:id/status', async (req, res) => {
-    invoiceController.updateInvoiceStatus(req, res);
-});
+// Rutas para autenticación
+app.post('/api/auth/register', authController.register);
+app.post('/api/auth/login', authController.login);
+app.post('/api/auth/forgot-password', authController.forgotPassword);
+app.post('/api/auth/reset-password', authController.resetPassword);
+app.get('/api/auth/me', authMiddleware.authenticateToken, authController.getMe);
+app.post('/api/auth/change-password', authMiddleware.authenticateToken, authController.changePassword);
 
-// Rutas para clients
-app.get('/api/clients', clientController.getClients);
-app.post('/api/clients', clientController.createClientController);
-app.get('/api/clients/:id', clientController.getClientByIdController);
-app.put('/api/clients/:id', clientController.updateClientController);
-app.delete('/api/clients/:id', clientController.deleteClientController);
+// Rutas para usuarios
+app.get('/api/users', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.getUsers);
+app.get('/api/users/:id', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.getUserById);
+app.post('/api/users', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionMiddleware.checkPlanLimits('users'), userController.createUser);
+app.put('/api/users/:id', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.updateUser);
+app.delete('/api/users/:id', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.deleteUser);
+app.post('/api/users/:id/reset-password', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.resetUserPassword);
+app.put('/api/users/profile', authMiddleware.authenticateToken, userController.updateProfile);
 
-// Rutas para products
-app.get('/api/products', productController.getProducts);
-app.post('/api/products', productController.createProductController);
-app.get('/api/products/:id', productController.getProductByIdController);
-app.put('/api/products/:id', productController.updateProductController);
-app.delete('/api/products/:id', productController.deleteProductController);
+// Rutas para suscripciones
+app.get('/api/subscription', authMiddleware.authenticateToken, subscriptionController.getSubscriptionInfo);
+app.put('/api/subscription/plan', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionController.updateSubscriptionPlan);
+app.post('/api/subscription/payment', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionController.registerPayment);
+app.post('/api/subscription/cancel', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionController.cancelSubscription);
+app.get('/api/subscription/plans', subscriptionController.getAvailablePlans);
+app.get('/api/subscription/trial-status', authMiddleware.authenticateToken, subscriptionController.checkTrialStatus);
+app.get('/api/subscription/payment-history', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionController.getPaymentHistory);
+app.put('/api/subscription/billing-info', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionController.updateBillingInfo);
+app.get('/api/subscription/usage-stats', authMiddleware.authenticateToken, subscriptionController.getUsageStats);
 
-// Rutas para company
-app.get('/api/company', companyController.getCompanyController);
-app.put('/api/company', companyController.updateCompanyController);
+// Ruta protegida para administradores del sistema
+// Esta ruta debe estar protegida con un middleware adicional para admin del sistema
+app.post('/api/subscription/extend-trial', subscriptionController.extendTrial);
+
+// Rutas para invoices (modificadas)
+app.get('/api/invoices', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, invoiceController.getInvoices);
+app.post('/api/invoices', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, subscriptionMiddleware.checkPlanLimits('invoices'), invoiceController.createOrUpdateInvoice);
+app.put('/api/invoices/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, invoiceController.updateInvoice);
+app.delete('/api/invoices/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, authMiddleware.checkRole(['admin', 'facturador']), invoiceController.deleteInvoice);
+app.get('/api/invoices/dashboard-data', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, invoiceController.getDashboardData);
+app.patch('/api/invoices/:id/status', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, invoiceController.updateInvoiceStatus);
+
+// Rutas para clients (modificadas)
+app.get('/api/clients', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, clientController.getClients);
+app.post('/api/clients', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, subscriptionMiddleware.checkPlanLimits('clients'), clientController.createClientController);
+app.get('/api/clients/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, clientController.getClientByIdController);
+app.put('/api/clients/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, clientController.updateClientController);
+app.delete('/api/clients/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, authMiddleware.checkRole(['admin', 'facturador']), clientController.deleteClientController);
+
+// Rutas para products (modificadas)
+app.get('/api/products', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, productController.getProducts);
+app.post('/api/products', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, subscriptionMiddleware.checkPlanLimits('products'), productController.createProductController);
+app.get('/api/products/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, productController.getProductByIdController);
+app.put('/api/products/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, productController.updateProductController);
+app.delete('/api/products/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, authMiddleware.checkRole(['admin', 'facturador']), productController.deleteProductController);
+
+// Rutas para company (modificadas)
+app.get('/api/company', authMiddleware.authenticateToken, companyController.getCompanyController);
+app.put('/api/company', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), companyController.updateCompanyController);
+app.put('/api/company/theme', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), companyController.updateThemeController);
+app.delete('/api/company', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), companyController.deleteCompanyController);
 
 // Ruta mejorada para subir logo
-app.post('/api/company/logo', upload.single('logo'), async (req, res) => {
+app.post('/api/company/logo', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), upload.single('logo'), async (req, res) => {
     if (!req.file) {
         return res.status(400).json({ mensaje: 'No se subió ningún archivo.' });
     }
@@ -182,13 +218,11 @@ app.post('/api/company/logo', upload.single('logo'), async (req, res) => {
 
         // Guardar info en la base de datos
         const Company = require('./models/company.model');
-        let company = await Company.findOne();
+        let company = await Company.findById(req.user.companyId);
 
-        // Si no existe compañía, crearla (o manejar error según tu lógica)
+        // Si no existe compañía, retornar error (debería existir después del registro)
         if (!company) {
-           console.log("No se encontró compañía, creando una nueva...")
-           company = new Company();
-           // Podrías inicializar otros campos aquí si es necesario
+           return res.status(404).json({ mensaje: 'Compañía no encontrada.' });
         }
 
         // Si hay logo previo en Cloudinary, eliminarlo
@@ -248,7 +282,7 @@ app.post('/api/company/logo', upload.single('logo'), async (req, res) => {
 
 
 // Ruta mejorada para eliminar logo
-app.delete('/api/company/logo/:id', async (req, res) => {
+app.delete('/api/company/logo/:id', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), async (req, res) => {
   try {
     // Decodificar el ID que viene codificado en la URL (public_id de Cloudinary)
     const publicIdToDelete = decodeURIComponent(req.params.id);
@@ -256,25 +290,19 @@ app.delete('/api/company/logo/:id', async (req, res) => {
 
     // 1. Buscar la compañía que tiene este logoId
     const Company = require('./models/company.model');
-    // Buscar por logoId para asegurar que estamos modificando la compañía correcta
-    const company = await Company.findOne({ logoId: publicIdToDelete });
+    // Buscar la compañía del usuario actual
+    const company = await Company.findById(req.user.companyId);
 
     if (!company) {
-        console.log('No se encontró compañía con ese logoId:', publicIdToDelete);
-        // Decidir si eliminar de Cloudinary de todas formas o retornar error
-        // Por seguridad, podríamos solo eliminar si encontramos la compañía asociada
-        try {
-             console.log("Intentando eliminar de Cloudinary de todas formas...");
-             await cloudinary.uploader.destroy(publicIdToDelete);
-             console.log('Logo eliminado de Cloudinary (sin compañía asociada encontrada):', publicIdToDelete);
-             return res.json({ success: true, message: 'Logo eliminado de Cloudinary (compañía no encontrada/actualizada)' });
-        } catch (cloudinaryErr) {
-             console.error('Error eliminando logo de Cloudinary (sin compañía asociada):', cloudinaryErr);
-             return res.status(500).json({ success: false, message: 'Error eliminando de Cloudinary', error: cloudinaryErr.message });
-        }
+        return res.status(404).json({ success: false, message: 'Compañía no encontrada' });
     }
 
-    // 2. Eliminar de Cloudinary (si se encontró la compañía)
+    // Verificar que el logo pertenezca a la compañía del usuario
+    if (company.logoId !== publicIdToDelete) {
+        return res.status(403).json({ success: false, message: 'No autorizado para eliminar este logo' });
+    }
+
+    // 2. Eliminar de Cloudinary
     try {
         await cloudinary.uploader.destroy(publicIdToDelete);
         console.log('Logo eliminado de Cloudinary:', publicIdToDelete);
@@ -317,19 +345,15 @@ app.delete('/api/company/logo/:id', async (req, res) => {
   }
 });
 
-
-app.put('/api/company/theme', companyController.updateThemeController);
-app.delete('/api/company', companyController.deleteCompanyController);
-
-// Rutas para documentos
-app.get('/api/documents', documentController.getDocuments);
-app.get('/api/documents/pending', documentController.getPendingDocuments);
-app.get('/api/documents/:id', documentController.getDocument);
-app.post('/api/documents', documentController.createDocument);
-app.put('/api/documents/:id', documentController.updateDocument);
-app.delete('/api/documents/:id', documentController.deleteDocument);
-app.patch('/api/documents/:id/status', documentController.updateDocumentStatus);
-app.post('/api/documents/:id/convert-to-invoice', documentController.convertToInvoice);
+// Rutas para documentos (modificadas)
+app.get('/api/documents', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, documentController.getDocuments);
+app.get('/api/documents/pending', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, documentController.getPendingDocuments);
+app.get('/api/documents/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, documentController.getDocument);
+app.post('/api/documents', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, documentController.createDocument);
+app.put('/api/documents/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, documentController.updateDocument);
+app.delete('/api/documents/:id', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, authMiddleware.checkRole(['admin', 'facturador']), documentController.deleteDocument);
+app.patch('/api/documents/:id/status', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, documentController.updateDocumentStatus);
+app.post('/api/documents/:id/convert-to-invoice', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, subscriptionMiddleware.checkPlanLimits('invoices'), documentController.convertToInvoice);
 
 app.use(express.static(path.join(__dirname, '..', 'build')));
 app.get('*', (req, res) => {
@@ -375,4 +399,4 @@ async function startServer() {
     });
 }
 
-startServer(); 
+startServer();

@@ -1,4 +1,4 @@
-// models/company.model.js
+// models/company.model.js (modificado)
 const mongoose = require('mongoose');
 
 const companySchema = new mongoose.Schema(
@@ -62,6 +62,48 @@ const companySchema = new mongoose.Schema(
       type: String, 
       enum: ['small', 'medium', 'large'],
       default: 'medium' 
+    },
+    // Campos nuevos para suscripción
+    subscription: {
+      plan: {
+        type: String,
+        enum: ['free', 'basic', 'premium'],
+        default: 'free'
+      },
+      status: {
+        type: String,
+        enum: ['trial', 'active', 'expired', 'cancelled'],
+        default: 'trial'
+      },
+      trialStartDate: {
+        type: Date,
+        default: Date.now
+      },
+      trialEndDate: {
+        type: Date,
+        default: function() {
+          // Trial de 7 días
+          const date = new Date(this.trialStartDate);
+          date.setDate(date.getDate() + 7);
+          return date;
+        }
+      },
+      subscriptionStartDate: Date,
+      subscriptionEndDate: Date,
+      paymentMethod: {
+        type: String,
+        enum: ['credit_card', 'bank_transfer', 'none'],
+        default: 'none'
+      },
+      paymentStatus: {
+        type: String,
+        enum: ['pending', 'completed', 'failed', 'none'],
+        default: 'none'
+      }
+    },
+    active: {
+      type: Boolean,
+      default: true
     }
   },
   { timestamps: true }
