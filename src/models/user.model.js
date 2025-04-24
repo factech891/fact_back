@@ -6,18 +6,21 @@ const bcrypt = require('bcryptjs');
 const userSchema = new Schema({
     nombre: {
         type: String,
-        required: true
+        required: true,
+        trim: true
     },
     email: {
         type: String,
         required: true,
-        unique: true,
+        unique: true, // Esto ya crea un índice único en email
         trim: true,
-        lowercase: true
+        lowercase: true,
+        match: [/^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$/, 'Por favor, introduce un email válido']
     },
     password: {
         type: String,
         required: true
+        // minlength: [6, 'La contraseña debe tener al menos 6 caracteres']
     },
     companyId: {
         type: Schema.Types.ObjectId,
@@ -26,7 +29,11 @@ const userSchema = new Schema({
     },
     role: {
         type: String,
-        enum: ['admin', 'facturador', 'visor'],
+        enum: {
+            values: ['admin', 'manager', 'facturador', 'visor'],
+            message: 'El rol {VALUE} no es válido. Roles permitidos: admin, manager, facturador, visor'
+        },
+        required: [true, 'El rol es requerido'],
         default: 'visor'
     },
     active: {
@@ -42,13 +49,9 @@ const userSchema = new Schema({
 
 // Método pre-save para hash de contraseña
 userSchema.pre('save', async function(next) {
-    // Solo hacer hash de la contraseña si es nueva o fue modificada
     if (!this.isModified('password')) return next();
-    
     try {
-        // Generar un salt
         const salt = await bcrypt.genSalt(10);
-        // Hash contraseña con salt
         this.password = await bcrypt.hash(this.password, salt);
         next();
     } catch (error) {
@@ -58,7 +61,18 @@ userSchema.pre('save', async function(next) {
 
 // Método para comparar contraseñas
 userSchema.methods.comparePassword = async function(candidatePassword) {
-    return bcrypt.compare(candidatePassword, this.password);
+    try {
+        return await bcrypt.compare(candidatePassword, this.password);
+    } catch (error) {
+        console.error("Error comparando contraseña:", error);
+        return false;
+    }
 };
+
+// Añadir índices para mejorar rendimiento de búsquedas comunes
+// userSchema.index({ email: 1 }); // <-- ELIMINADO: Ya se crea por unique: true
+userSchema.index({ companyId: 1 }); // Índice para buscar por compañía
+userSchema.index({ companyId: 1, role: 1 }); // Índice compuesto para buscar usuarios de una compañía por rol
+
 
 module.exports = mongoose.model('User', userSchema);
