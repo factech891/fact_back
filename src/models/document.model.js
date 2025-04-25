@@ -1,118 +1,150 @@
 // models/document.model.js
 const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
 
-const itemSchema = new mongoose.Schema({
-    product: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Product', 
+// Mantener itemSchema como está (no necesita companyId individualmente)
+const itemSchema = new Schema({
+    product: {
+        type: Schema.Types.ObjectId,
+        ref: 'Product',
         required: [true, 'El producto es requerido']
     },
-    quantity: { 
-        type: Number, 
+    quantity: {
+        type: Number,
         required: [true, 'La cantidad es requerida'],
-        min: [1, 'La cantidad mínima es 1']
+        min: [0.01, 'La cantidad mínima debe ser mayor que 0'] // O 1 si son unidades enteras
     },
-    price: { 
-        type: Number, 
+    price: {
+        type: Number,
         required: [true, 'El precio es requerido'],
         min: [0, 'El precio no puede ser negativo']
     },
-    subtotal: { 
-        type: Number, 
-        required: [true, 'El subtotal es requerido'],
-        min: [0, 'El subtotal no puede ser negativo']
+    subtotal: {
+        type: Number,
+        required: [true, 'El subtotal del ítem es requerido'],
+        min: [0, 'El subtotal del ítem no puede ser negativo']
+        // Podría calcularse automáticamente
     },
-    taxExempt: {
+    taxExempt: { // Indica si este ítem específico está exento de IVA
         type: Boolean,
         default: false
     }
-});
+}, {_id: false});
 
-const documentSchema = new mongoose.Schema({
-    documentNumber: { 
-        type: String, 
+const documentSchema = new Schema({
+    // --- Campo NUEVO para Multiempresa ---
+    companyId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Company', // Referencia al modelo Company
+        required: [true, 'La compañía es requerida'],
+        index: true // Índice simple para búsquedas generales por compañía
+    },
+    // --- Fin Campo Multiempresa ---
+
+    documentNumber: {
+        type: String,
         required: [true, 'El número de documento es requerido'],
-        unique: true 
+        trim: true
+        // unique: true // <-- ELIMINADO: Se reemplaza por índice compuesto
     },
     client: {
-        type: mongoose.Schema.Types.ObjectId,
+        type: Schema.Types.ObjectId,
         ref: 'Client',
         required: [true, 'El cliente es requerido']
     },
-    date: { 
-        type: Date, 
-        default: Date.now 
+    date: {
+        type: Date,
+        required: [true, 'La fecha es requerida'],
+        default: Date.now
     },
-    expiryDate: {
+    expiryDate: { // Fecha de expiración (para cotizaciones, etc.)
         type: Date,
         default: null
     },
-    type: {
+    type: { // Tipo de documento (Cotización, Proforma, Nota de Entrega)
         type: String,
+        required: [true, 'El tipo de documento es requerido'],
         enum: {
-            values: ['QUOTE', 'PROFORMA', 'DELIVERY_NOTE'],
+            values: ['QUOTE', 'PROFORMA', 'DELIVERY_NOTE', 'OTHER'], // Añadido OTHER
             message: '{VALUE} no es un tipo de documento válido'
         },
         default: 'QUOTE'
     },
     items: {
         type: [itemSchema],
-        required: [true, 'Los ítems son requeridos'],
-        validate: [array => array.length > 0, 'Debe haber al menos un ítem']
+        required: [true, 'Se requiere al menos un ítem en el documento'],
+        validate: [items => items.length > 0, 'El documento debe contener al menos un ítem.']
     },
-    subtotal: { 
-        type: Number, 
-        required: [true, 'El subtotal es requerido'],
-        min: [0, 'El subtotal no puede ser negativo']
+    subtotal: {
+        type: Number,
+        required: [true, 'El subtotal general es requerido'],
+        min: [0, 'El subtotal general no puede ser negativo']
     },
-    taxAmount: { 
-        type: Number, 
-        required: [true, 'El impuesto es requerido'],
+    taxAmount: { // Monto total de impuestos (ej. IVA)
+        type: Number,
+        required: [true, 'El monto del impuesto es requerido'],
+        default: 0,
         min: [0, 'El impuesto no puede ser negativo']
     },
-    total: { 
-        type: Number, 
+    total: { // Monto final (subtotal + impuestos - descuentos si los hubiera)
+        type: Number,
         required: [true, 'El total es requerido'],
         min: [0, 'El total no puede ser negativo']
     },
     status: {
         type: String,
+        required: [true, 'El estado es requerido'],
         enum: {
-            values: ['DRAFT', 'SENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED'],
-            message: '{VALUE} no es un estado válido'
+            // Estados posibles para documentos generales
+            values: ['DRAFT', 'SENT', 'APPROVED', 'REJECTED', 'EXPIRED', 'CONVERTED', 'CANCELLED'],
+            message: '{VALUE} no es un estado válido para el documento'
         },
         default: 'DRAFT'
     },
-    currency: {
+    currency: { // Moneda del documento
         type: String,
-        enum: ['USD', 'VES', 'EUR'],
+        required: [true, 'La moneda es requerida'],
+        enum: ['USD', 'VES', 'EUR', 'COP'], // Ajustar según necesidad
         default: 'USD'
     },
-    paymentTerms: {
+    // No se suelen incluir condiciones de pago/días de crédito en todos los tipos de documentos,
+    // pero se pueden añadir si son relevantes para tus tipos específicos (QUOTE, PROFORMA).
+    // paymentTerms: { ... },
+    // creditDays: { ... },
+    notes: { // Notas internas o para el cliente
         type: String,
-        enum: ['Contado', 'Crédito'],
-        default: 'Contado'
-    },
-    creditDays: {
-        type: Number,
-        default: 0,
-        min: [0, 'Los días de crédito no pueden ser negativos']
-    },
-    notes: {
-        type: String,
+        trim: true,
         default: ''
     },
-    terms: {
+    terms: { // Términos y condiciones aplicables
         type: String,
+        trim: true,
         default: ''
     },
-    convertedInvoice: {
-        type: mongoose.Schema.Types.ObjectId,
+    convertedInvoice: { // Referencia a la factura si este documento se convirtió
+        type: Schema.Types.ObjectId,
         ref: 'Invoice',
         default: null
     }
+    // Otros campos posibles: responsable (ref: 'User'), etc.
+
 }, {
-    timestamps: true
+    timestamps: true // Añade createdAt y updatedAt
+});
+
+// --- Índice Compuesto Único ---
+// Asegura que el 'documentNumber' sea único DENTRO de cada 'companyId'
+documentSchema.index({ companyId: 1, documentNumber: 1 }, { unique: true });
+
+// Middleware pre-save (opcional) para calcular totales, etc.
+// documentSchema.pre('save', function(next) {
+//    // Lógica de cálculo similar a la de Invoice si es necesario
+//    next();
+// });
+
+documentSchema.pre('save', function(next) {
+
+    next();
 });
 
 module.exports = mongoose.model('Document', documentSchema);

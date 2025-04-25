@@ -1,107 +1,174 @@
 // models/invoice.model.js
 const mongoose = require('mongoose');
+const Schema = mongoose.Schema;
 
-const itemSchema = new mongoose.Schema({
-    product: { 
-        type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Product', 
+const itemSchema = new Schema({
+    product: {
+        type: Schema.Types.ObjectId,
+        ref: 'Product', // Referencia al modelo Product
         required: [true, 'El producto es requerido']
     },
-    quantity: { 
-        type: Number, 
+    quantity: {
+        type: Number,
         required: [true, 'La cantidad es requerida'],
-        min: [1, 'La cantidad mínima es 1']
+        min: [0.01, 'La cantidad mínima debe ser mayor que 0'] // Ajustado para permitir decimales si es necesario, o mantener 1 si son unidades enteras
     },
-    price: { 
-        type: Number, 
+    price: {
+        type: Number,
         required: [true, 'El precio es requerido'],
         min: [0, 'El precio no puede ser negativo']
     },
-    subtotal: { 
-        type: Number, 
-        required: [true, 'El subtotal es requerido'],
-        min: [0, 'El subtotal no puede ser negativo']
+    // Considerar si el subtotal debe calcularse automáticamente o si es ingresado
+    subtotal: {
+        type: Number,
+        required: [true, 'El subtotal del ítem es requerido'],
+        min: [0, 'El subtotal del ítem no puede ser negativo']
+        // Se podría calcular con un virtual o pre-save hook: this.quantity * this.price
     },
-    taxExempt: {
+    taxExempt: { // Indica si este ítem específico está exento de IVA
         type: Boolean,
         default: false
     }
-});
+    // Podrías añadir campos como 'discountRate', 'discountAmount', 'taxRate', 'taxAmount' por ítem si necesitas más detalle
+}, {_id: false}); // {_id: false} es opcional, evita que Mongoose cree un _id para cada subdocumento de item
 
-const invoiceSchema = new mongoose.Schema({
-    number: { 
-        type: String, 
+const invoiceSchema = new Schema({
+    // --- Campo NUEVO para Multiempresa ---
+    companyId: {
+        type: Schema.Types.ObjectId,
+        ref: 'Company', // Referencia al modelo Company
+        required: [true, 'La compañía es requerida'],
+        index: true // Índice simple para búsquedas generales por compañía
+    },
+    // --- Fin Campo Multiempresa ---
+
+    number: {
+        type: String,
         required: [true, 'El número de factura es requerido'],
-        unique: true 
+        trim: true
+        // unique: true // <-- ELIMINADO: Se reemplaza por índice compuesto
     },
     client: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'Client',
+        type: Schema.Types.ObjectId,
+        ref: 'Client', // Referencia al modelo Client
         required: [true, 'El cliente es requerido']
     },
-    date: { 
-        type: Date, 
-        default: Date.now 
+    date: {
+        type: Date,
+        required: [true, 'La fecha es requerida'],
+        default: Date.now
+    },
+    dueDate: { // Fecha de vencimiento (importante para estado 'overdue')
+        type: Date
+        // Se podría calcular basado en 'date' y 'diasCredito'
     },
     items: {
         type: [itemSchema],
-        required: [true, 'Los ítems son requeridos'],
-        validate: [array => array.length > 0, 'Debe haber al menos un ítem']
+        required: [true, 'Se requiere al menos un ítem en la factura'],
+        validate: [items => items.length > 0, 'La factura debe contener al menos un ítem.']
     },
-    subtotal: { 
-        type: Number, 
-        required: [true, 'El subtotal es requerido'],
-        min: [0, 'El subtotal no puede ser negativo']
+    subtotal: { // Suma de subtotales de ítems antes de impuestos/descuentos generales
+        type: Number,
+        required: [true, 'El subtotal general es requerido'],
+        min: [0, 'El subtotal general no puede ser negativo']
     },
-    tax: { 
-        type: Number, 
-        required: [true, 'El impuesto es requerido'],
+    tax: { // Impuesto total aplicado a la factura (ej. IVA)
+        type: Number,
+        required: [true, 'El monto del impuesto es requerido'],
+        default: 0,
         min: [0, 'El impuesto no puede ser negativo']
     },
-    total: { 
-        type: Number, 
+    // Podrías añadir 'discountTotal' si aplicas descuentos generales
+    total: { // Monto final (subtotal - descuentos + impuestos)
+        type: Number,
         required: [true, 'El total es requerido'],
         min: [0, 'El total no puede ser negativo']
     },
     status: {
         type: String,
         enum: {
-            values: ['draft', 'pending', 'paid', 'partial', 'overdue', 'cancelled'],
-            message: '{VALUE} no es un estado válido'
+            values: ['draft', 'pending', 'paid', 'partial', 'overdue', 'cancelled', 'void'], // Añadido 'void' para anuladas
+            message: '{VALUE} no es un estado válido para la factura'
         },
         default: 'draft'
     },
     moneda: {
         type: String,
-        enum: ['USD', 'VES'],
-        default: 'VES'  // Cambiado a VES como moneda por defecto
+        required: [true, 'La moneda es requerida'],
+        enum: ['USD', 'VES', 'EUR', 'COP'], // Ampliar si es necesario
+        default: 'VES'
+    },
+    tasaCambio: { // Tasa de cambio usada si la moneda no es la base de la compañía
+        type: Number,
+        min: 0
     },
     condicionesPago: {
         type: String,
-        enum: ['Contado', 'Crédito'],
+        // Podría referenciar a las condiciones del cliente o ser específicas de la factura
         default: 'Contado'
     },
-    diasCredito: {
+    diasCredito: { // Podría heredarse del cliente o definirse aquí
         type: Number,
-        default: 30,
+        default: 0,
         min: [0, 'Los días de crédito no pueden ser negativos']
     },
-    documentType: {
+    documentType: { // Para diferenciar Factura, Nota de Crédito, Nota de Débito, etc.
         type: String,
-        enum: ['invoice', 'quote', 'proforma', 'draft'],
+        enum: ['invoice', 'credit_note', 'debit_note', 'quote', 'proforma', 'draft'],
         default: 'invoice'
     },
-    // Nuevos campos para notas y términos
-    notes: {
+    relatedDocument: { // Para vincular notas de crédito/débito a una factura original
+        type: Schema.Types.ObjectId,
+        ref: 'Invoice'
+    },
+    notes: { // Notas internas o para el cliente
         type: String,
+        trim: true,
         default: ''
     },
-    terms: {
+    terms: { // Términos y condiciones
         type: String,
+        trim: true,
         default: ''
     }
+    // Otros campos posibles: vendedor (ref: 'User'), metodoPago, referenciaPago, etc.
+
 }, {
-    timestamps: true
+    timestamps: true // Añade createdAt y updatedAt
 });
+
+// --- Índice Compuesto Único ---
+// Asegura que el 'number' sea único DENTRO de cada 'companyId'
+invoiceSchema.index({ companyId: 1, number: 1 }, { unique: true });
+
+// Middleware pre-save para calcular totales o dueDate (ejemplo conceptual)
+// invoiceSchema.pre('save', function(next) {
+//     if (this.isModified('items') || this.isModified('taxRate')) { // Si cambian items o tasa de impuesto
+//         let calculatedSubtotal = 0;
+//         let calculatedTax = 0;
+//         const taxRate = 0.16; // Ejemplo, obtener de configuración
+//         this.items.forEach(item => {
+//             item.subtotal = item.quantity * item.price; // Calcular subtotal del item
+//             calculatedSubtotal += item.subtotal;
+//             if (!item.taxExempt) {
+//                 calculatedTax += item.subtotal * taxRate;
+//             }
+//         });
+//         this.subtotal = calculatedSubtotal;
+//         this.tax = calculatedTax;
+//         this.total = this.subtotal + this.tax; // Añadir lógica de descuentos si existe
+//     }
+//     if (this.isModified('date') || this.isModified('diasCredito')) {
+//         if (this.diasCredito > 0) {
+//             const dueDate = new Date(this.date);
+//             dueDate.setDate(dueDate.getDate() + this.diasCredito);
+//             this.dueDate = dueDate;
+//         } else {
+//             this.dueDate = this.date; // Vence el mismo día si es de contado
+//         }
+//     }
+//     next();
+// });
+
 
 module.exports = mongoose.model('Invoice', invoiceSchema);
