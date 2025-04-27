@@ -8,6 +8,7 @@ const {
    deleteProduct,
    getProductByCode // Asegúrate que esté exportado y actualizado en el servicio
 } = require('../services/product.service'); // Asegúrate que la ruta sea correcta
+const stockMonitorService = require('../services/stock-monitor.service'); // Importar servicio de monitoreo de stock
 
 // Helper para validar ObjectId
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -84,6 +85,12 @@ const createProductController = async (req, res) => {
 
        // Llamar al servicio createProduct pasando productData y companyId
        const newProduct = await createProduct(productData, companyId);
+       
+       // Verificar si el nuevo producto tiene stock bajo y notificar si es necesario
+       if (newProduct.tipo === 'producto' && newProduct.stock > 0) {
+           await stockMonitorService.checkProductStockAfterUpdate(newProduct);
+       }
+       
        res.status(201).json(newProduct);
 
    } catch (error) {
@@ -198,6 +205,13 @@ const updateProductController = async (req, res) => {
 
        // Llamar al servicio updateProduct pasando id, datos y companyId
        const updatedProduct = await updateProduct(id, productData, companyId);
+       
+       // Verificar si el producto actualizado tiene stock bajo y generar notificación si es necesario
+       if (updatedProduct.tipo === 'producto' && 
+           (productData.stock !== undefined || productData.tipo !== undefined)) {
+           // Solo verificar si se modificó el stock o el tipo
+           await stockMonitorService.checkProductStockAfterUpdate(updatedProduct);
+       }
 
        // El servicio ya maneja el caso de no encontrado o sin permiso
        res.status(200).json(updatedProduct);
