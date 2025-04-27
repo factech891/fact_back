@@ -66,13 +66,42 @@ const notificationSchema = new Schema({
         type: String,
         required: false,
         trim: true
+    },
+    
+    // Campo expira automáticamente - NUEVO
+    expiresAt: {
+        type: Date,
+        default: function() {
+            // Las notificaciones expirarán en 60 días por defecto
+            const date = new Date();
+            date.setDate(date.getDate() + 60); // 60 días desde la creación
+            return date;
+        },
+        index: { expires: 0 } // 0 significa que MongoDB usará la fecha del campo para expirar
     }
 }, {
     timestamps: true // Agregar createdAt y updatedAt
 });
 
-// Índice compuesto para búsquedas eficientes
+// Índices compuestos para búsquedas eficientes
 notificationSchema.index({ companyId: 1, read: 1 });
 notificationSchema.index({ companyId: 1, type: 1 });
+
+// Middleware para ajustar el tiempo de expiración según el tipo de notificación y estado de lectura
+notificationSchema.pre('save', function(next) {
+    const now = new Date();
+    
+    if (this.isNew || this.isModified('read')) {
+        // Configurar diferentes tiempos de expiración según el estado y tipo
+        if (this.read) {
+            // Las notificaciones leídas expiran más rápido: 30 días
+            this.expiresAt = new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+        } else {
+            // Las no leídas duran más: 60 días
+            this.expiresAt = new Date(now.getTime() + (60 * 24 * 60 * 60 * 1000));
+        }
+    }
+    next();
+});
 
 module.exports = mongoose.model('Notification', notificationSchema);

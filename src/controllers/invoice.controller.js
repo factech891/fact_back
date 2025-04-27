@@ -5,17 +5,17 @@ const {
     getAllInvoices,
     getInvoiceById,
     createInvoice,
-    updateInvoice, // Usaremos esta desde el servicio para la lógica de actualización
+    updateInvoice,
     deleteInvoice,
     getInvoiceByNumber,
     updateInvoiceStatus
-} = require('../services/invoice.service'); // Asegúrate que la ruta sea correcta
+} = require('../services/invoice.service'); 
 
-// Importar modelo para la generación de números (podría moverse al servicio)
+// Importar modelo para la generación de números
 const Invoice = require('../models/invoice.model');
-// Importar modelos relacionados para validaciones (opcional, mejor en servicio)
-// const Client = require('../models/client.model');
-// const Product = require('../models/product.model');
+// Importar servicio de monitoreo de stock y modelo de producto
+const stockMonitorService = require('../services/stock-monitor.service');
+const Product = require('../models/product.model');
 
 // Helper para validar ObjectId
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -203,6 +203,47 @@ exports.createOrUpdateInvoice = async (req, res) => {
             // Llamar al servicio de creación pasando datos y companyId
             // El servicio se encargará de asignar companyId y poblar
             savedInvoice = await createInvoice(invoiceData, companyId);
+        }
+
+        // Después de guardar la factura, verificamos el stock de los productos
+        if (savedInvoice && savedInvoice.items && savedInvoice.items.length > 0) {
+            console.log('Verificando stock de productos tras facturación...');
+            
+            // Para cada ítem de la factura
+            for (const item of savedInvoice.items) {
+                if (item.product) {
+                    try {
+                        // Obtener el ID del producto (puede ser objeto o string)
+                        const productId = typeof item.product === 'object' ? item.product._id : item.product;
+                        
+                        // Obtener el producto COMPLETO de la base de datos
+                        // IMPORTANTE: incluir explícitamente el companyId en la consulta para asegurarnos de que esté presente
+                        const updatedProduct = await Product.findById(productId);
+                        
+                        if (!updatedProduct) {
+                            console.log(`Producto con ID ${productId} no encontrado`);
+                            continue;
+                        }
+                        
+                        // Verificar explícitamente si tiene companyId
+                        if (!updatedProduct.companyId) {
+                            console.log(`Producto ${productId} (${updatedProduct.nombre}) no tiene companyId. Asignando el de la factura.`);
+                            // Asignar el companyId de la factura al producto (sólo para la verificación)
+                            updatedProduct.companyId = companyId;
+                        }
+                        
+                        if (updatedProduct.tipo === 'producto') {
+                            console.log(`Verificando stock del producto: ${updatedProduct.nombre}, ID: ${updatedProduct._id}, CompanyId: ${updatedProduct.companyId}, Stock actual: ${updatedProduct.stock}`);
+                            
+                            // Verificar si el stock está bajo y generar notificación si es necesario
+                            await stockMonitorService.checkProductStockAfterUpdate(updatedProduct);
+                        }
+                    } catch (stockError) {
+                        console.error(`Error al verificar stock del producto ${item.product}:`, stockError);
+                        // No interrumpir el flujo principal por un error en la verificación de stock
+                    }
+                }
+            }
         }
 
         // Devolver la factura guardada (ya poblada por el servicio)
