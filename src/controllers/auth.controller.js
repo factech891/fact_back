@@ -113,10 +113,16 @@ const authController = {
             // Buscar usuario por email (incluir contraseña para comparar)
             const user = await User.findOne({ email }).select('+password'); // Incluir password explícitamente
 
-            // Validar usuario y contraseña
-            if (!user || !(await user.comparePassword(password))) {
-                console.warn(`[Login] Fallido: Email o contraseña incorrectos para ${email}`);
-                return res.status(401).json({ success: false, message: 'Email o contraseña incorrectos' });
+            // Validar si el usuario existe
+            if (!user) {
+                console.warn(`[Login] Fallido: Usuario no encontrado para ${email}`);
+                return res.status(401).json({ success: false, message: 'Usuario no existe' });
+            }
+
+            // Validar contraseña
+            if (!(await user.comparePassword(password))) {
+                console.warn(`[Login] Fallido: Contraseña incorrecta para ${email}`);
+                return res.status(401).json({ success: false, message: 'Contraseña incorrecta' });
             }
 
             // Verificar si el usuario está activo
