@@ -204,6 +204,7 @@ const createInvoice = async (invoiceData, companyId) => {
 /**
  * Actualizar una factura, asegurando que pertenezca a la compañía correcta.
  * CON VALIDACIÓN Y ACTUALIZACIÓN DE STOCK (Lógica Compleja).
+ * Soporta tanto productos como servicios.
  * @param {string} id - ID de la factura.
  * @param {Object} invoiceData - Datos actualizados.
  * @param {string} companyId - ID de la compañía.
@@ -296,12 +297,13 @@ const updateInvoice = async (id, invoiceData, companyId) => {
 
         console.log('Ajustes de stock calculados:', Object.fromEntries(stockAdjustments));
 
-        // --- 3. Verificar Stock Disponible para los Ajustes Negativos ---
+        // --- 3. Verificar todos los items (productos Y servicios) ---
         const productIdsToAdjust = Array.from(stockAdjustments.keys());
+        let productsAndServicesToCheck = [];
         let productsToUpdate = [];
         
         if (productIdsToAdjust.length > 0) {
-            console.log('Buscando productos para ajustar:', productIdsToAdjust);
+            console.log('Buscando items para verificar:', productIdsToAdjust);
             
             // Verificar que sean IDs válidos
             const validProductIds = productIdsToAdjust.filter(id => isValidObjectId(id));
@@ -311,22 +313,28 @@ const updateInvoice = async (id, invoiceData, companyId) => {
                 throw new Error('IDs de productos inválidos detectados');
             }
             
-            productsToUpdate = await Product.find({
+            // CAMBIO IMPORTANTE: Primero buscar TODOS los items (productos Y servicios)
+            productsAndServicesToCheck = await Product.find({
                 _id: { $in: validProductIds },
-                companyId: companyId,
-                tipo: 'producto' // Solo verificar/ajustar productos físicos
+                companyId: companyId
+                // Ya no filtramos por tipo: 'producto'
             }).session(session);
             
-            console.log(`Encontrados ${productsToUpdate.length} productos para actualizar de ${validProductIds.length} solicitados`);
+            console.log(`Encontrados ${productsAndServicesToCheck.length} items para verificar de ${validProductIds.length} solicitados`);
 
-            // Verificar que todos los productos necesarios existen
-            if (productsToUpdate.length !== validProductIds.length) {
-                const foundIds = productsToUpdate.map(p => p._id.toString());
+            // Verificar que todos los items necesarios existen
+            if (productsAndServicesToCheck.length !== validProductIds.length) {
+                const foundIds = productsAndServicesToCheck.map(p => p._id.toString());
                 const missingIds = validProductIds.filter(id => !foundIds.includes(id));
-                console.error('Algunos productos no fueron encontrados:', missingIds);
-                throw new Error(`Productos no encontrados o sin acceso: ${missingIds.join(', ')}`);
+                console.error('Algunos items no fueron encontrados:', missingIds);
+                throw new Error(`Items no encontrados o sin acceso: ${missingIds.join(', ')}`);
             }
 
+            // Ahora filtrar solo los productos físicos para ajuste de inventario
+            productsToUpdate = productsAndServicesToCheck.filter(item => item.tipo === 'producto');
+            console.log(`De los ${productsAndServicesToCheck.length} items, ${productsToUpdate.length} son productos físicos que requieren ajuste de inventario`);
+
+            // Verificar el stock disponible solo para productos físicos
             for (const product of productsToUpdate) {
                 const productIdStr = product._id.toString();
                 const stockChange = stockAdjustments.get(productIdStr);
@@ -356,9 +364,9 @@ const updateInvoice = async (id, invoiceData, companyId) => {
             throw new Error('Factura no encontrada durante la actualización.');
         }
 
-        // --- 5. Aplicar Ajustes de Stock (DENTRO de la sesión) ---
+        // --- 5. Aplicar Ajustes de Stock SOLO a productos físicos (DENTRO de la sesión) ---
         const stockUpdatePromises = [];
-        for (const product of productsToUpdate) {
+        for (const product of productsToUpdate) { // Solo productos físicos (tipo: 'producto')
             const productIdStr = product._id.toString();
             const stockChange = stockAdjustments.get(productIdStr);
             if (stockChange !== 0) { // Solo actualizar si hay cambio
@@ -376,6 +384,8 @@ const updateInvoice = async (id, invoiceData, companyId) => {
         if (stockUpdatePromises.length > 0) {
             console.log(`Ejecutando ${stockUpdatePromises.length} actualizaciones de stock`);
             await Promise.all(stockUpdatePromises);
+        } else {
+            console.log(`No hay actualizaciones de stock para aplicar (posiblemente solo servicios)`);
         }
 
         // --- 6. Confirmar Transacción ---
