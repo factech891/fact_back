@@ -143,10 +143,13 @@ const uploadCompanyLogo = async (companyId, filePath) => {
 
     // Subir nueva imagen a Cloudinary
     console.log('Servicio - Subiendo nuevo logo a Cloudinary desde:', filePath);
+    
+    // CAMBIO CLAVE: Usar un public_id fijo basado en el ID de la compañía
+    // en lugar de un timestamp que genera nuevas imágenes cada vez
     const result = await cloudinary.uploader.upload(filePath, {
-      folder: `logos_empresas/${companyId}`, // Organizar por companyId en Cloudinary
-      public_id: `logo_${Date.now()}`, // Nombre único para evitar colisiones
-      overwrite: true, // Sobrescribir si existiera un public_id igual (aunque es poco probable)
+      folder: 'logos_empresas', // Carpeta común para todos los logos
+      public_id: `company_logo_${companyId}`, // ID fijo basado en el ID de la compañía
+      overwrite: true, // Sobrescribir si ya existe una imagen con este ID
       transformation: [
         { width: 500, height: 500, crop: "limit" }, // Limitar tamaño
         { quality: "auto", fetch_format: "auto" } // Optimizar calidad y formato
