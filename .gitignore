@@ -1,3 +1,4 @@
 node_modules
 .env
 uploads/
+scripts/create-platform-admin.js

@@ -30,8 +30,8 @@ const userSchema = new Schema({
     role: {
         type: String,
         enum: {
-            values: ['admin', 'manager', 'facturador', 'visor'],
-            message: 'El rol {VALUE} no es válido. Roles permitidos: admin, manager, facturador, visor'
+            values: ['admin', 'manager', 'facturador', 'visor', 'platform_admin'],
+            message: 'El rol {VALUE} no es válido. Roles permitidos: admin, manager, facturador, visor, platform_admin'
         },
         required: [true, 'El rol es requerido'],
         default: 'visor'

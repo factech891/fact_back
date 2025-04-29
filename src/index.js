@@ -36,6 +36,10 @@ const notificationController = require('./controllers/notification.controller');
 const authMiddleware = require('./middleware/auth.middleware');
 const subscriptionMiddleware = require('./middleware/subscription.middleware');
 const notificationService = require('./services/notification.service');
+// --- Inicio Modificación: Añadir importaciones ---
+const platformAdminMiddleware = require('./middleware/platform-admin.middleware');
+const platformAdminController = require('./controllers/platform-admin.controller');
+// --- Fin Modificación: Añadir importaciones ---
 
 const app = express();
 const server = http.createServer(app); // Crear servidor HTTP con Express
@@ -386,6 +390,36 @@ app.get('/api/subscription/payment-history', authMiddleware.authenticateToken, a
 app.put('/api/subscription/billing-info', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionController.updateBillingInfo);
 app.get('/api/subscription/usage-stats', authMiddleware.authenticateToken, subscriptionController.getUsageStats);
 app.post('/api/subscription/extend-trial', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionController.extendTrial);
+
+// --- Inicio Modificación: Añadir rutas de platform admin ---
+// Rutas para administración de plataforma (solo para platform_admin)
+app.get('/api/platform-admin/dashboard',
+    authMiddleware.authenticateToken,
+    platformAdminMiddleware.isPlatformAdmin,
+    platformAdminController.getDashboardStats
+);
+app.get('/api/platform-admin/companies',
+    authMiddleware.authenticateToken,
+    platformAdminMiddleware.isPlatformAdmin,
+    platformAdminController.listCompanies
+);
+app.post('/api/platform-admin/extend-trial',
+    authMiddleware.authenticateToken,
+    platformAdminMiddleware.isPlatformAdmin,
+    platformAdminController.extendTrial
+);
+app.post('/api/platform-admin/change-subscription',
+    authMiddleware.authenticateToken,
+    platformAdminMiddleware.isPlatformAdmin,
+    platformAdminController.changeSubscriptionStatus
+);
+app.post('/api/platform-admin/toggle-company',
+    authMiddleware.authenticateToken,
+    platformAdminMiddleware.isPlatformAdmin,
+    platformAdminController.toggleCompanyActive
+);
+// --- Fin Modificación: Añadir rutas de platform admin ---
+
 
 // Rutas para invoices (protegidas, con chequeo de suscripción)
 app.get('/api/invoices', authMiddleware.authenticateToken, subscriptionMiddleware.checkSubscriptionStatus, invoiceController.getInvoices);
