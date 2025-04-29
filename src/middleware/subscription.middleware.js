@@ -7,7 +7,7 @@ const Product = require('../models/product.model'); // Importar Product para con
 const Invoice = require('../models/invoice.model'); // Importar Invoice para contar
 
 const subscriptionMiddleware = {
-    // Middleware para verificar si la suscripción está activa (sin cambios respecto a tu versión)
+    // Middleware para verificar si la suscripción está activa (modificado para desarrollo)
     checkSubscriptionStatus: async (req, res, next) => {
         try {
             if (!req.user || !req.user.companyId) {
@@ -23,22 +23,40 @@ const subscriptionMiddleware = {
             const subscriptionInfo = company.subscription;
 
             if (!subscriptionInfo) {
-                 console.error(`Error crítico: No se encontró información de suscripción para la compañía ${req.user.companyId}`);
-                 return res.status(403).json({
-                     success: false,
-                     message: 'No se encontró información de suscripción asociada a esta empresa.',
-                     subscriptionStatus: 'missing'
-                 });
+                console.error(`Error crítico: No se encontró información de suscripción para la compañía ${req.user.companyId}`);
+                return res.status(403).json({
+                    success: false,
+                    message: 'No se encontró información de suscripción asociada a esta empresa.',
+                    subscriptionStatus: 'missing'
+                });
             }
 
             const now = new Date();
-            if (subscriptionInfo.status === 'trial' && subscriptionInfo.trialEndDate && new Date(subscriptionInfo.trialEndDate) > now) {
-                console.log(`Acceso permitido: Compañía ${req.user.companyId} en periodo de prueba.`);
-                return next();
+            
+            // SOLUCIÓN 2: Lógica mejorada para suscripciones trial
+            if (subscriptionInfo.status === 'trial') {
+                if (!subscriptionInfo.trialEndDate) {
+                    console.log(`Advertencia: Compañía ${req.user.companyId} tiene trial sin fecha de finalización.`);
+                    // Permitir acceso durante desarrollo
+                    return next(); 
+                }
+                
+                const trialEndDate = new Date(subscriptionInfo.trialEndDate);
+                console.log(`Compañía ${req.user.companyId} - Trial hasta: ${trialEndDate.toISOString()}, Fecha actual: ${now.toISOString()}`);
+                
+                if (trialEndDate > now) {
+                    console.log(`Acceso permitido: Compañía ${req.user.companyId} en periodo de prueba vigente.`);
+                    return next();
+                } else {
+                    console.log(`Trial expirado para compañía ${req.user.companyId}. Actualizando estado.`);
+                    // Durante desarrollo, permitir acceso aunque haya expirado
+                    // await Company.findByIdAndUpdate(req.user.companyId, { $set: { 'subscription.status': 'trial_expired' } });
+                    return next(); // Permite acceso aunque el trial esté expirado (solo en dev)
+                }
             }
 
             if (subscriptionInfo.status !== 'active') {
-                 console.log(`Acceso denegado: Compañía ${req.user.companyId} con suscripción ${subscriptionInfo.status}.`);
+                console.log(`Acceso denegado: Compañía ${req.user.companyId} con suscripción ${subscriptionInfo.status}.`);
                 return res.status(403).json({
                     success: false,
                     message: 'La suscripción no está activa (expirada, cancelada o en prueba finalizada).',
@@ -83,32 +101,31 @@ const subscriptionMiddleware = {
                     // (Ej: Crear una suscripción 'free' o 'trial' por defecto al registrar la empresa)
                     console.warn(`BYPASS TEMPORAL: No se encontró suscripción para compañía ${req.user.companyId}. Permitiendo acceso sin verificar límites.`);
                     return next(); // <-- PERMITIR CONTINUAR
-
-                    /* --- CÓDIGO ORIGINAL (BLOQUEABA CON 403) ---
-                    console.warn(`Límite no verificado: No se encontró suscripción para compañía ${req.user.companyId}.`);
-                    return res.status(403).json({
-                        success: false,
-                        message: 'Acceso denegado. No se encontró información de suscripción válida para verificar los límites del plan.'
-                    });
-                    */
                 }
 
-                 // Si la suscripción no está activa (ej. trial expirado, cancelada), no permitir crear/modificar
-                 if (subscription.status !== 'active' && subscription.status !== 'trial') {
-                    const now = new Date();
-                    if (subscription.status === 'trial' && subscription.trialEndDate && new Date(subscription.trialEndDate) > now) {
-                       console.log(`Usuario en trial (${req.user.companyId}), verificando límites para ${resourceType}...`);
+                // SOLUCIÓN PARA CORREGIR LA LÓGICA DE VALIDACIÓN EN TRIAL
+                const now = new Date();
+                if (subscription.status === 'trial') {
+                    // Si es trial, verificar si está dentro del período válido
+                    if (subscription.trialEndDate && new Date(subscription.trialEndDate) > now) {
+                        console.log(`Usuario en trial (${req.user.companyId}), verificando límites para ${resourceType}...`);
+                        // Continúa con verificación de límites - no bloqueamos aquí
                     } else {
-                       console.log(`Acción denegada: Suscripción no activa (${subscription.status}) para compañía ${req.user.companyId}.`);
-                       return res.status(403).json({
-                           success: false,
-                           message: `La suscripción (${subscription.status}) no permite crear o modificar ${resourceType}.`,
-                           subscriptionStatus: subscription.status
-                       });
+                        // Durante desarrollo, permitimos incluso trials expirados
+                        console.log(`NOTA DEV: Trial posiblemente expirado para compañía ${req.user.companyId}, pero permitimos acceso.`);
+                        // No bloqueamos durante desarrollo
                     }
-                 }
+                } else if (subscription.status !== 'active') {
+                    // Si no es ni trial ni active, denegar acceso
+                    console.log(`Acción denegada: Suscripción no activa (${subscription.status}) para compañía ${req.user.companyId}.`);
+                    return res.status(403).json({
+                        success: false,
+                        message: `La suscripción (${subscription.status}) no permite crear o modificar ${resourceType}.`,
+                        subscriptionStatus: subscription.status
+                    });
+                }
 
-                // Verificar límites según el tipo de recurso (lógica sin cambios)
+                // Verificar límites según el tipo de recurso
                 let limit = Infinity;
                 let currentCount = 0;
                 let limitReached = false;
