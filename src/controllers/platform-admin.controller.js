@@ -5,6 +5,12 @@ const Subscription = require('../models/subscription.model'); // Asegúrate que 
 const Invoice = require('../models/invoice.model');
 const Client = require('../models/client.model');
 const Product = require('../models/product.model');
+// --- Inicio Modificación: Importar dependencias para notificación ---
+const notificationService = require('../services/notification.service');
+// Acceder a la función global de forma segura
+const emitCompanyNotification = global.emitCompanyNotification;
+// --- Fin Modificación: Importar dependencias para notificación ---
+
 
 const platformAdminController = {
     // Obtener estadísticas globales
@@ -63,24 +69,26 @@ const platformAdminController = {
     listCompanies: async (req, res) => {
         try {
             const companies = await Company.find()
-                .select('_id nombre rif email active subscription createdAt')
+                .select('_id nombre rif email active subscription createdAt changeHistory') // Incluir changeHistory si se usa DetailPanel
                 .sort('-createdAt')
                 .lean();
 
             res.json({
                 success: true,
+                // Mapear para asegurar estructura consistente y añadir historial si existe
                 companies: companies.map(company => ({
                     id: company._id,
                     name: company.nombre,
                     rif: company.rif,
                     email: company.email,
                     active: company.active,
-                    // Acceder a los campos anidados de subscription de forma segura
                     status: company.subscription?.status,
                     plan: company.subscription?.plan,
                     trialEndDate: company.subscription?.trialEndDate,
                     subscriptionEndDate: company.subscription?.subscriptionEndDate,
-                    createdAt: company.createdAt
+                    createdAt: company.createdAt,
+                    // Pasar historial para DetailPanel (si existe)
+                    changeHistory: company.changeHistory || []
                 }))
             });
         } catch (error) {
@@ -96,160 +104,148 @@ const platformAdminController = {
     extendTrial: async (req, res) => {
         try {
             const { companyId, days } = req.body;
+            const adminUserId = req.user.userId; // Obtener ID del admin autenticado
+            const adminName = req.user.name || 'Admin Plataforma'; // Obtener nombre del admin
 
-            // Validación: Permitir días negativos, pero no cero.
+            // Validación
             if (!companyId || days === undefined || !Number.isInteger(days) || days === 0) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Se requiere un ID de compañía válido y un número de días (entero) diferente de cero'
-                });
+                return res.status(400).json({ success: false, message: 'ID de compañía y número de días diferente de cero requeridos' });
             }
 
             const company = await Company.findById(companyId);
             if (!company) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Compañía no encontrada'
-                });
+                return res.status(404).json({ success: false, message: 'Compañía no encontrada' });
             }
 
-            // Asegurarse que la estructura de subscription exista
-            if (!company.subscription) {
-                 company.subscription = {}; // Inicializar si no existe
-            }
+            if (!company.subscription) company.subscription = {};
 
-
-            // Calcular nueva fecha de fin de trial
+            const originalTrialEndDate = company.subscription.trialEndDate ? new Date(company.subscription.trialEndDate) : new Date();
             let newTrialEndDate;
-            let message = ''; // Inicializar mensaje
+            let message = '';
+            let changeType = days > 0 ? 'Extensión Prueba' : 'Reducción Prueba';
 
             if (company.subscription.status === 'trial' && company.subscription.trialEndDate) {
-                // Si está en trial, extender/reducir desde la fecha actual de fin
                 newTrialEndDate = new Date(company.subscription.trialEndDate);
             } else {
-                // Si no está en trial o no tiene fecha de fin, empezar/reducir desde hoy
-                newTrialEndDate = new Date();
-                // Si se añaden días (extensión) a una suscripción no 'trial', cambiarla a 'trial'
+                newTrialEndDate = new Date(); // Base calculation on today if not in trial
                 if (days > 0) {
-                    company.subscription.status = 'trial';
+                    company.subscription.status = 'trial'; // Mark as trial if extending from non-trial state
+                    changeType = 'Inicio/Extensión Prueba';
                 }
             }
-
-            // Añadir o restar los días según el signo
             newTrialEndDate.setDate(newTrialEndDate.getDate() + days);
 
             const now = new Date();
             let trialExpiredDueToPastDate = false;
 
-            // Verificar si la nueva fecha calculada es en el pasado
             if (newTrialEndDate < now) {
-                // Opción: Marcar como expirada si la fecha resultante es pasada
                 company.subscription.status = 'expired';
-                company.subscription.trialEndDate = now; // Establecer la fecha de expiración a ahora
+                company.subscription.trialEndDate = now; // Set expiration to now
                 trialExpiredDueToPastDate = true;
-                // Mensaje específico para este caso
-                message = `La suscripción de prueba de ${company.nombre} ha sido marcada como expirada porque la nueva fecha (${newTrialEndDate.toISOString().split('T')[0]}) estaría en el pasado.`;
+                message = `Suscripción de prueba de ${company.nombre} marcada como expirada (fecha resultante pasada).`;
+                changeType = 'Expiración Forzada Prueba'; // Specific type for this case
+                newTrialEndDate = now; // The actual end date is now
             } else {
-                // Si la fecha es futura o hoy, actualizarla normalmente
                 company.subscription.trialEndDate = newTrialEndDate;
-                 // Si se extendió/redujo pero sigue en trial, asegurar que el status sea 'trial'
-                 // (Podría haberse calculado desde hoy si no estaba en trial antes)
-                 if (days > 0) { // Solo tiene sentido marcar como trial si se extienden días
-                     company.subscription.status = 'trial';
-                 }
+                if (days > 0) company.subscription.status = 'trial'; // Ensure status is trial if days > 0
             }
 
-            // Guardar cambios
+            // Añadir registro al historial de cambios
+            const historyEntry = {
+                timestamp: new Date(),
+                adminId: adminUserId,
+                adminName: adminName,
+                type: changeType,
+                days: days, // Guardar los días añadidos/quitados
+                originalDate: originalTrialEndDate,
+                newDate: newTrialEndDate,
+                notes: trialExpiredDueToPastDate ? 'La fecha calculada estaba en el pasado.' : `Modificación manual de ${days} días.`
+            };
+
+            // Inicializar changeHistory si no existe
+            if (!Array.isArray(company.changeHistory)) {
+                company.changeHistory = [];
+            }
+            company.changeHistory.push(historyEntry);
+
             await company.save();
 
-            // Mensaje de respuesta dinámico
-            // Si no expiró por fecha pasada, usar el mensaje de extensión/reducción
             if (!trialExpiredDueToPastDate) {
-                 message = days > 0
-                    ? `Período de prueba extendido por ${days} días para ${company.nombre}`
-                    : `Período de prueba reducido en ${Math.abs(days)} días para ${company.nombre}`;
+                message = days > 0 ? `Período de prueba extendido ${days} días para ${company.nombre}` : `Período de prueba reducido ${Math.abs(days)} días para ${company.nombre}`;
             }
 
             res.json({
                 success: true,
-                message: message, // Usar el mensaje determinado
+                message: message,
                 company: {
                     id: company._id,
                     name: company.nombre,
                     status: company.subscription.status,
-                    trialEndDate: company.subscription.trialEndDate // Devolver la fecha final guardada
+                    trialEndDate: company.subscription.trialEndDate
                 }
             });
         } catch (error) {
             console.error('Error modificando período de prueba:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Error al modificar período de prueba'
-            });
+            res.status(500).json({ success: false, message: 'Error al modificar período de prueba' });
         }
     },
 
-    // Cambiar estado de suscripción de una compañía
+    // Cambiar estado de suscripción de una compañía (puede necesitar historial también)
     changeSubscriptionStatus: async (req, res) => {
         try {
             const { companyId, status } = req.body;
+            const adminUserId = req.user.userId;
+            const adminName = req.user.name || 'Admin Plataforma';
 
             if (!companyId || !status || !['trial', 'active', 'expired', 'cancelled'].includes(status)) {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Se requiere un ID de compañía válido y un estado válido (trial, active, expired, cancelled)'
-                });
+                return res.status(400).json({ success: false, message: 'ID de compañía y estado válido requerido' });
             }
 
             const company = await Company.findById(companyId);
             if (!company) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Compañía no encontrada'
-                });
+                return res.status(404).json({ success: false, message: 'Compañía no encontrada' });
             }
 
-             // Asegurarse que la estructura de subscription exista
-            if (!company.subscription) {
-                 company.subscription = {}; // Inicializar si no existe
-            }
+            if (!company.subscription) company.subscription = {};
 
-            // Actualizar estado
+            const originalStatus = company.subscription.status;
+            const originalTrialEndDate = company.subscription.trialEndDate;
+            const originalSubEndDate = company.subscription.subscriptionEndDate;
+
             company.subscription.status = status;
 
-            // Si es active y no hay fecha de inicio/fin, establecerla
-            if (status === 'active') {
-                if (!company.subscription.subscriptionStartDate) {
-                    company.subscription.subscriptionStartDate = new Date();
-                }
+             if (status === 'active') {
+                if (!company.subscription.subscriptionStartDate) company.subscription.subscriptionStartDate = new Date();
                 if (!company.subscription.subscriptionEndDate) {
-                    // Por defecto, suscripción de 1 año
-                    const endDate = new Date();
-                    endDate.setFullYear(endDate.getFullYear() + 1);
+                    const endDate = new Date(); endDate.setFullYear(endDate.getFullYear() + 1);
                     company.subscription.subscriptionEndDate = endDate;
                 }
-                // Al activar, limpiar fechas de trial si existieran
                 company.subscription.trialEndDate = undefined;
             } else if (status === 'trial') {
-                 // Si se pone en trial manualmente, establecer fecha fin por defecto (ej: 7 días) si no existe
                  if (!company.subscription.trialEndDate || company.subscription.trialEndDate < new Date()) {
-                      const trialEndDate = new Date();
-                      trialEndDate.setDate(trialEndDate.getDate() + 7); // Trial por defecto de 7 días
+                      const trialEndDate = new Date(); trialEndDate.setDate(trialEndDate.getDate() + 7);
                       company.subscription.trialEndDate = trialEndDate;
                  }
-                 // Limpiar fechas de suscripción activa
                  company.subscription.subscriptionStartDate = undefined;
                  company.subscription.subscriptionEndDate = undefined;
-            } else {
-                 // Para expired/cancelled, limpiar fechas si es necesario o mantenerlas como registro
-                 // (Aquí se decide mantenerlas, pero se podrían limpiar)
-                 // company.subscription.trialEndDate = undefined;
-                 // company.subscription.subscriptionStartDate = undefined;
-                 // company.subscription.subscriptionEndDate = undefined;
             }
 
+             // Añadir historial
+             if (originalStatus !== status) {
+                 const historyEntry = {
+                     timestamp: new Date(),
+                     adminId: adminUserId,
+                     adminName: adminName,
+                     type: `Cambio Estado: ${originalStatus || 'Ninguno'} → ${status}`,
+                     originalDate: status === 'active' ? originalSubEndDate : originalTrialEndDate,
+                     newDate: status === 'active' ? company.subscription.subscriptionEndDate : company.subscription.trialEndDate,
+                     notes: `Estado de suscripción cambiado manualmente a ${status}.`
+                 };
+                 if (!Array.isArray(company.changeHistory)) company.changeHistory = [];
+                 company.changeHistory.push(historyEntry);
+             }
 
-            // Guardar cambios
+
             await company.save();
 
             res.json({
@@ -266,38 +262,56 @@ const platformAdminController = {
             });
         } catch (error) {
             console.error('Error cambiando estado de suscripción:', error);
-            res.status(500).json({
-                success: false,
-                message: 'Error al cambiar estado de suscripción'
-            });
+            res.status(500).json({ success: false, message: 'Error al cambiar estado de suscripción' });
         }
     },
 
-    // Activar/desactivar una compañía (afecta el login, no la suscripción)
+    // Activar/desactivar una compañía (puede necesitar historial también)
     toggleCompanyActive: async (req, res) => {
         try {
             const { companyId, active } = req.body;
+            const adminUserId = req.user.userId;
+            const adminName = req.user.name || 'Admin Plataforma';
 
-            // Validar que 'active' sea un booleano
             if (!companyId || typeof active !== 'boolean') {
-                return res.status(400).json({
-                    success: false,
-                    message: 'Se requiere un ID de compañía válido y un estado de activación (true/false)'
-                });
+                return res.status(400).json({ success: false, message: 'ID de compañía y estado de activación (true/false) requeridos' });
             }
 
+            // Obtener estado actual antes de actualizar
+            const companyBefore = await Company.findById(companyId).select('active changeHistory').lean();
+            if (!companyBefore) {
+                return res.status(404).json({ success: false, message: 'Compañía no encontrada' });
+            }
+
+            // Solo actualizar si el estado es diferente
+            if (companyBefore.active === active) {
+                 return res.json({
+                     success: true,
+                     message: `La compañía ${companyId} ya estaba ${active ? 'activada' : 'desactivada'}.`,
+                     company: { id: companyId, active: active }
+                 });
+            }
+
+            // Añadir historial
+             const historyEntry = {
+                 timestamp: new Date(),
+                 adminId: adminUserId,
+                 adminName: adminName,
+                 type: `Cambio Acceso: ${companyBefore.active ? 'Activada' : 'Desactivada'} → ${active ? 'Activada' : 'Desactivada'}`,
+                 notes: `Estado de acceso cambiado manualmente a ${active ? 'Activado' : 'Desactivado'}.`
+             };
+             // Asegurar que changeHistory es un array
+             const currentHistory = Array.isArray(companyBefore.changeHistory) ? companyBefore.changeHistory : [];
+
+            // Actualizar el estado y añadir el historial
             const company = await Company.findByIdAndUpdate(
                 companyId,
-                { active: active }, // Usar directamente el booleano recibido
-                { new: true } // Devuelve el documento actualizado
+                {
+                    active: active,
+                    $push: { changeHistory: historyEntry } // Añadir al array de historial
+                },
+                { new: true }
             );
-
-            if (!company) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'Compañía no encontrada'
-                });
-            }
 
             res.json({
                 success: true,
@@ -310,12 +324,71 @@ const platformAdminController = {
             });
         } catch (error) {
             console.error('Error cambiando estado de activación de la compañía:', error);
+            res.status(500).json({ success: false, message: 'Error al cambiar estado de activación de la compañía' });
+        }
+    },
+
+    // --- Inicio Modificación: Nueva función para enviar notificación ---
+    sendNotificationToCompany: async (req, res) => {
+        try {
+            const { companyId } = req.params; // Obtener ID de la URL
+            const { title, message, type = 'info' } = req.body; // Obtener datos del cuerpo
+            const adminUserId = req.user.userId; // ID del admin que envía (asumiendo que está en req.user por el middleware)
+
+            // Validación básica
+            if (!companyId || !title || !message) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'Se requiere ID de compañía, título y mensaje para la notificación.'
+                });
+            }
+
+            // Verificar si la compañía existe (opcional pero recomendado)
+            const companyExists = await Company.findById(companyId).select('nombre').lean(); // Solo necesitamos saber si existe y el nombre
+            if (!companyExists) {
+                return res.status(404).json({ success: false, message: 'Compañía no encontrada.' });
+            }
+
+            // Crear la notificación usando el servicio
+            // Pasamos el ID del admin como 'createdBy' para saber quién la envió
+            const notificationData = {
+                companyId,
+                title: `[Admin] ${title}`, // Prefijo para identificar notificaciones de admin
+                message,
+                type, // 'info', 'warning', 'success', 'error', etc.
+                createdBy: adminUserId, // Guardar quién la creó
+                isPlatformAdminNotification: true // Marcarla como notificación del admin
+            };
+
+            const newNotification = await notificationService.createNotification(notificationData);
+
+            // Emitir la notificación a la sala de la compañía vía Socket.IO
+            // Asegurarse que la función global esté disponible y sea una función
+            if (typeof emitCompanyNotification === 'function') {
+                 emitCompanyNotification(companyId.toString(), newNotification); // Asegurarse que companyId es string
+                 console.log(`Notificación enviada por admin ${adminUserId} a compañía ${companyId}`);
+            } else {
+                 console.warn('Función global emitCompanyNotification no encontrada o no es una función. No se pudo emitir por Socket.IO.');
+                 // Considerar devolver un mensaje parcial o loguear el problema
+            }
+
+
+            // Responder al frontend
+            res.json({
+                success: true,
+                message: `Notificación enviada correctamente a la compañía ${companyExists.nombre}.`,
+                notification: newNotification // Devolver la notificación creada
+            });
+
+        } catch (error) {
+            console.error('Error enviando notificación desde admin:', error);
             res.status(500).json({
                 success: false,
-                message: 'Error al cambiar estado de activación de la compañía'
+                message: 'Error interno al enviar la notificación.'
             });
         }
     }
+    // --- Fin Modificación: Nueva función para enviar notificación ---
 };
 
 module.exports = platformAdminController;

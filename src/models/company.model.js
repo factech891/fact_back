@@ -84,7 +84,7 @@ const companySchema = new mongoose.Schema(
         // CORRECCIÓN: Calcular el default basado en la fecha actual,
         // no depender de this.trialStartDate que puede no estar listo.
         default: function() {
-          const trialDurationDays = 7; // Duración del trial en días
+          const trialDurationDays = 15; // Duración del trial en días
           const date = new Date(); // Fecha/hora actual
           date.setDate(date.getDate() + trialDurationDays);
           console.log(`Calculando trialEndDate default: ${date.toISOString()}`); // Log para verificar
