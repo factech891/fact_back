@@ -36,10 +36,10 @@ const notificationController = require('./controllers/notification.controller');
 const authMiddleware = require('./middleware/auth.middleware');
 const subscriptionMiddleware = require('./middleware/subscription.middleware');
 const notificationService = require('./services/notification.service');
-// --- Inicio Modificación: Añadir importaciones ---
+// --- Inicio Modificación: Añadir importaciones --- // Mantener estas importaciones
 const platformAdminMiddleware = require('./middleware/platform-admin.middleware');
 const platformAdminController = require('./controllers/platform-admin.controller');
-// --- Fin Modificación: Añadir importaciones ---
+// --- Fin Modificación: Añadir importaciones --- // Mantener estas importaciones
 
 const app = express();
 const server = http.createServer(app); // Crear servidor HTTP con Express
@@ -391,34 +391,39 @@ app.put('/api/subscription/billing-info', authMiddleware.authenticateToken, auth
 app.get('/api/subscription/usage-stats', authMiddleware.authenticateToken, subscriptionController.getUsageStats);
 app.post('/api/subscription/extend-trial', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionController.extendTrial);
 
-// --- Inicio Modificación: Añadir rutas de platform admin ---
+// --- Inicio Modificación: CORREGIR rutas de platform admin ---
 // Rutas para administración de plataforma (solo para platform_admin)
-app.get('/api/platform-admin/dashboard',
+// CORREGIDO: Ruta para obtener estadísticas del dashboard
+app.get('/api/platform-admin/stats', // <- Cambiado de 'dashboard' a 'stats'
     authMiddleware.authenticateToken,
     platformAdminMiddleware.isPlatformAdmin,
     platformAdminController.getDashboardStats
 );
+// Ruta para listar compañías (ya estaba bien)
 app.get('/api/platform-admin/companies',
     authMiddleware.authenticateToken,
     platformAdminMiddleware.isPlatformAdmin,
     platformAdminController.listCompanies
 );
-app.post('/api/platform-admin/extend-trial',
+// CORREGIDO: Ruta para extender/reducir trial
+app.post('/api/platform-admin/companies/extend-trial', // <- Añadido '/companies/'
     authMiddleware.authenticateToken,
     platformAdminMiddleware.isPlatformAdmin,
     platformAdminController.extendTrial
 );
-app.post('/api/platform-admin/change-subscription',
+// CORREGIDO: Ruta para cambiar estado de suscripción
+app.put('/api/platform-admin/companies/subscription-status', // <- Cambiado método a PUT y ruta completa
     authMiddleware.authenticateToken,
     platformAdminMiddleware.isPlatformAdmin,
     platformAdminController.changeSubscriptionStatus
 );
-app.post('/api/platform-admin/toggle-company',
+// CORREGIDO: Ruta para activar/desactivar compañía
+app.put('/api/platform-admin/companies/toggle-active', // <- Cambiado método a PUT y ruta completa
     authMiddleware.authenticateToken,
     platformAdminMiddleware.isPlatformAdmin,
     platformAdminController.toggleCompanyActive
 );
-// --- Fin Modificación: Añadir rutas de platform admin ---
+// --- Fin Modificación: CORREGIR rutas de platform admin ---
 
 
 // Rutas para invoices (protegidas, con chequeo de suscripción)
