@@ -2,6 +2,7 @@
 const Product = require('../models/product.model');
 const Notification = require('../models/notification.model');
 const notificationService = require('./notification.service');
+const socketService = require('./socket.service'); // Añadido según modificación
 
 const stockMonitorService = {
     /**
@@ -78,11 +79,12 @@ const stockMonitorService = {
                         console.log(`[Stock Monitor] Nueva notificación creada con ID: ${newNotification._id}`);
 
                         // --- Emitir en Tiempo Real ---
-                        if (global.emitCompanyNotification && typeof global.emitCompanyNotification === 'function') {
-                            global.emitCompanyNotification(companyId, newNotification);
+                        // Reemplazado según modificación
+                        if (socketService.isInitialized()) {
+                            socketService.emitCompanyNotification(companyId, newNotification);
                             console.log(`[Stock Monitor] Notificación emitida en tiempo real`);
                         } else {
-                            console.warn(`[Stock Monitor] ADVERTENCIA: No se pudo emitir en tiempo real (emitCompanyNotification no está disponible)`);
+                            console.warn(`[Stock Monitor] ADVERTENCIA: No se pudo emitir en tiempo real (Servicio Socket no inicializado)`);
                         }
 
                         return newNotification; // Devolver la notificación creada
@@ -178,11 +180,12 @@ const stockMonitorService = {
                         createdNotifications.push(notification); // Añadir al array de creadas
 
                         // --- Emitir en Tiempo Real ---
-                        if (global.emitCompanyNotification && typeof global.emitCompanyNotification === 'function') {
-                            global.emitCompanyNotification(companyId, notification);
+                        // Reemplazado según modificación
+                        if (socketService.isInitialized()) {
+                            socketService.emitCompanyNotification(companyId, notification);
                             console.log(`[Stock Monitor] Notificación periódica emitida en tiempo real para compañía ${companyId}`);
                         } else {
-                            console.warn(`[Stock Monitor] ADVERTENCIA: No se pudo emitir en tiempo real (emitCompanyNotification no disponible)`);
+                            console.warn(`[Stock Monitor] ADVERTENCIA: No se pudo emitir en tiempo real (Servicio Socket no inicializado)`);
                         }
                     } else {
                         // console.log(`[Stock Monitor] Ya existe una notificación activa para ${product.nombre} (verificación periódica)`); // Log opcional

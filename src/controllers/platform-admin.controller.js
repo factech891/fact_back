@@ -8,7 +8,8 @@ const Product = require('../models/product.model');
 // --- Inicio Modificación: Importar dependencias para notificación ---
 const notificationService = require('../services/notification.service');
 // Acceder a la función global de forma segura
-const emitCompanyNotification = global.emitCompanyNotification;
+// const emitCompanyNotification = global.emitCompanyNotification; // Eliminado según modificación
+const socketService = require('../services/socket.service'); // Añadido según modificación
 // --- Fin Modificación: Importar dependencias para notificación ---
 
 
@@ -363,15 +364,13 @@ const platformAdminController = {
             const newNotification = await notificationService.createNotification(notificationData);
 
             // Emitir la notificación a la sala de la compañía vía Socket.IO
-            // Asegurarse que la función global esté disponible y sea una función
-            if (typeof emitCompanyNotification === 'function') {
-                 emitCompanyNotification(companyId.toString(), newNotification); // Asegurarse que companyId es string
-                 console.log(`Notificación enviada por admin ${adminUserId} a compañía ${companyId}`);
+            // Reemplazado según modificación
+            if (socketService.isInitialized()) {
+                socketService.emitCompanyNotification(companyId.toString(), newNotification);
+                console.log(`Notificación enviada por admin ${adminUserId} a compañía ${companyId}`);
             } else {
-                 console.warn('Función global emitCompanyNotification no encontrada o no es una función. No se pudo emitir por Socket.IO.');
-                 // Considerar devolver un mensaje parcial o loguear el problema
+                console.warn('Servicio de Socket no inicializado. No se pudo emitir la notificación en tiempo real.');
             }
-
 
             // Responder al frontend
             res.json({
