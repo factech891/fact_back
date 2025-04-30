@@ -5,13 +5,24 @@ const Subscription = require('../models/subscription.model'); // Asegúrate que 
 const emailService = require('../services/email.service'); // Asegúrate que la ruta sea correcta
 const crypto = require('crypto');
 
+// --- URLs de Avatares Disponibles (Para validación opcional en el futuro) ---
+// const availableAvatarUrls = [
+//    'https://pub-c37b7a23aa9c49239d088e3e0a3ba275.r2.dev/Disen%CC%83o%20sin%20ti%CC%81tulo/1.png',
+//    'https://pub-c37b7a23aa9c49239d088e3e0a3ba275.r2.dev/Disen%CC%83o%20sin%20ti%CC%81tulo/2.png',
+//    'https://pub-c37b7a23aa9c49239d088e3e0a3ba275.r2.dev/Disen%CC%83o%20sin%20ti%CC%81tulo/3.png',
+//    'https://pub-c37b7a23aa9c49239d088e3e0a3ba275.r2.dev/Disen%CC%83o%20sin%20ti%CC%81tulo/4.png',
+//    'https://pub-c37b7a23aa9c49239d088e3e0a3ba275.r2.dev/Disen%CC%83o%20sin%20ti%CC%81tulo/5.png',
+//    'https://pub-c37b7a23aa9c49239d088e3e0a3ba275.r2.dev/Disen%CC%83o%20sin%20ti%CC%81tulo/6.png'
+// ];
+
 const userController = {
-    // Obtener todos los usuarios de una empresa
+    // Obtener todos los usuarios de una empresa (SIN CAMBIOS, selectedAvatarUrl se incluye por defecto)
     getUsers: async (req, res) => {
         try {
             if (!req.user || !req.user.companyId) {
                 return res.status(401).json({ success: false, message: 'No autenticado' });
             }
+            // selectedAvatarUrl se incluye por defecto al no estar excluido en select()
             const users = await User.find({ companyId: req.user.companyId })
                 .select('-password -resetPasswordToken -resetPasswordExpires')
                 .sort({ createdAt: -1 });
@@ -22,13 +33,14 @@ const userController = {
         }
     },
 
-    // Obtener usuario por ID
+    // Obtener usuario por ID (SIN CAMBIOS, selectedAvatarUrl se incluye por defecto)
     getUserById: async (req, res) => {
         try {
             const { id } = req.params;
             if (!req.user || !req.user.companyId) {
                 return res.status(401).json({ success: false, message: 'No autenticado' });
             }
+             // selectedAvatarUrl se incluye por defecto al no estar excluido en select()
             const user = await User.findOne({ _id: id, companyId: req.user.companyId })
                            .select('-password -resetPasswordToken -resetPasswordExpires');
             if (!user) {
@@ -41,52 +53,22 @@ const userController = {
         }
     },
 
-    // Crear nuevo usuario (con bloque de suscripción comentado reintegrado)
+    // Crear nuevo usuario (SIN CAMBIOS relevantes para el avatar)
     createUser: async (req, res) => {
         try {
-            // --- MODIFICADO: Ahora también recibe 'password' del admin ---
             const { nombre, email, role, password } = req.body;
-
-            // Validación básica de entrada (incluyendo password si es creación)
             if (!nombre || !email || !role || !password) {
                  return res.status(400).json({ success: false, message: 'Faltan campos requeridos: nombre, email, rol o contraseña.' });
             }
-             // Validación simple de longitud de contraseña
             if (password.length < 6) {
                  return res.status(400).json({ success: false, message: 'La contraseña debe tener al menos 6 caracteres.' });
             }
-
-
             if (!req.user || !req.user.companyId) {
                 return res.status(401).json({ success: false, message: 'No autenticado o sin ID de compañía.' });
             }
 
-            // --- REINTEGRADO: Bloque de verificación de límites (Comentado) ---
-            /*
-            console.log("Verificando límites de suscripción..."); // Log informativo
-            const subscription = await Subscription.findOne({ companyId: req.user.companyId });
-            const userCount = await User.countDocuments({ companyId: req.user.companyId });
+            console.log("Verificación de límites desactivada temporalmente");
 
-            if (subscription && subscription.features && typeof subscription.features.maxUsers === 'number' && userCount >= subscription.features.maxUsers) {
-                console.log(`Límite de usuarios alcanzado para compañía ${req.user.companyId}: ${userCount}/${subscription.features.maxUsers}`);
-                return res.status(403).json({
-                    success: false,
-                    message: `Ha alcanzado el límite de usuarios (${subscription.features.maxUsers}) para su plan actual.`,
-                    limit: subscription.features.maxUsers,
-                    current: userCount
-                });
-            } else if (!subscription) {
-                 console.warn(`No se encontró suscripción para compañía ${req.user.companyId}. Se permite la creación (revisar lógica).`);
-                 // Aquí podrías decidir si permitir o bloquear si no hay suscripción
-            } else {
-                 console.log(`Límites de usuarios OK para compañía ${req.user.companyId}: ${userCount}/${subscription.features?.maxUsers ?? 'Ilimitado'}`);
-            }
-            */
-           // --- FIN Bloque comentado ---
-           console.log("Verificación de límites desactivada temporalmente"); // Mantener este log mientras el bloque esté comentado
-
-
-            // Verificar si ya existe un usuario con el mismo email
             const existingUser = await User.findOne({ email: email.toLowerCase() });
             if (existingUser) {
                 return res.status(400).json({
@@ -95,60 +77,36 @@ const userController = {
                 });
             }
 
-            // --- MODIFICADO: Usar la contraseña proporcionada por el admin ---
-            // const tempPassword = crypto.randomBytes(10).toString('hex'); // Ya no generamos contraseña temporal
-
-            // Crear instancia del nuevo usuario
+            // El avatar por defecto se asigna desde el modelo User
             const newUser = new User({
                 nombre: nombre.trim(),
                 email: email.toLowerCase().trim(),
-                password: password, // Usar la contraseña del formulario
+                password: password,
                 companyId: req.user.companyId,
                 role: role,
                 active: true
+                // selectedAvatarUrl usará el default del schema
             });
 
-            // Guardar el usuario (Mongoose se encarga del hash pre-save)
             const savedUser = await newUser.save();
 
-            // --- MODIFICADO: Ya no se envía email con contraseña temporal ---
-            // Enviar email de bienvenida (sin contraseña) si el servicio está activo
-            /*
-            try {
-                 const company = await Company.findById(req.user.companyId);
-                 await emailService.sendWelcomeEmail( // Tendría que ser una versión sin contraseña
-                     savedUser.email,
-                     {
-                         nombre: savedUser.nombre,
-                         email: savedUser.email,
-                         // password: tempPassword, // NO ENVIAR CONTRASEÑA
-                         companyName: company ? company.nombre : 'Tu Empresa',
-                         role: savedUser.role
-                     }
-                 );
-            } catch (emailError) {
-                 console.error(`Usuario ${savedUser.email} creado, pero falló el envío del email de bienvenida:`, emailError);
-            }
-            */
             console.log(`Usuario ${savedUser.email} creado. Recordar configurar el envío de email de bienvenida.`);
 
-
-            // Responder con éxito
             res.status(201).json({
                 success: true,
-                // --- MODIFICADO: Mensaje ya no menciona email con credenciales ---
                 message: 'Usuario creado correctamente.',
                 user: {
                     id: savedUser._id,
                     nombre: savedUser.nombre,
                     email: savedUser.email,
                     role: savedUser.role,
-                    active: savedUser.active
+                    active: savedUser.active,
+                    selectedAvatarUrl: savedUser.selectedAvatarUrl // Devolver avatar por defecto
                 }
             });
 
         } catch (error) {
-            console.error('Error detallado al crear usuario:', error); // Loguear el error completo
+            console.error('Error detallado al crear usuario:', error);
             if (error.name === 'ValidationError') {
                 const messages = Object.values(error.errors).map(val => val.message);
                 const errorMessage = messages.join('. ');
@@ -173,11 +131,10 @@ const userController = {
         }
     },
 
-    // Actualizar usuario
+    // Actualizar usuario (SIN CAMBIOS relevantes para el avatar)
     updateUser: async (req, res) => {
         try {
             const { id } = req.params;
-            // --- MODIFICADO: Ahora puede recibir 'password' para actualizarla ---
             const { nombre, role, active, password } = req.body;
 
             if (!req.user || !req.user.companyId) {
@@ -189,41 +146,36 @@ const userController = {
                 return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
             }
 
-            // Lógica para proteger al admin principal (sin cambios)
             const isFirstAdmin = await User.findOne({ companyId: req.user.companyId, role: 'admin' }).sort({ createdAt: 1 });
             if (isFirstAdmin && isFirstAdmin._id.toString() === id && req.user._id.toString() !== id) {
-                if (typeof active !== 'undefined' && !active) {
-                    return res.status(403).json({ success: false, message: 'No se puede desactivar al administrador principal' });
-                }
-                if (role && role !== 'admin') {
-                    return res.status(403).json({ success: false, message: 'No se puede cambiar el rol del administrador principal' });
-                }
-                 if (password) { // No permitir cambiar contraseña del admin principal por otro admin
-                     return res.status(403).json({ success: false, message: 'No se puede cambiar la contraseña del administrador principal directamente.' });
-                 }
+                // ... (lógica de protección sin cambios) ...
+                 if (typeof active !== 'undefined' && !active) { return res.status(403).json({ success: false, message: 'No se puede desactivar al administrador principal' });}
+                 if (role && role !== 'admin') { return res.status(403).json({ success: false, message: 'No se puede cambiar el rol del administrador principal' });}
+                 if (password) { return res.status(403).json({ success: false, message: 'No se puede cambiar la contraseña del administrador principal directamente.' });}
             }
 
-            // Actualizar campos
             if (nombre) user.nombre = nombre.trim();
             if (role) user.role = role;
             if (typeof active !== 'undefined') user.active = active;
-            // --- MODIFICADO: Actualizar contraseña solo si se proporciona una nueva ---
             if (password) {
-                 // Validación simple de longitud
-                 if (password.length < 6) {
-                     return res.status(400).json({ success: false, message: 'La nueva contraseña debe tener al menos 6 caracteres.' });
-                 }
-                 user.password = password; // El pre-save hook se encargará del hash
+                 if (password.length < 6) { return res.status(400).json({ success: false, message: 'La nueva contraseña debe tener al menos 6 caracteres.' }); }
+                 user.password = password;
                  console.log(`Contraseña actualizada para usuario ${user.email}`);
             }
 
 
-            const updatedUser = await user.save(); // Mongoose validation on save
+            const updatedUser = await user.save();
             res.json({
                 success: true,
                 message: 'Usuario actualizado correctamente',
-                // No devolver el usuario completo aquí por seguridad si no es necesario
-                user: { id: updatedUser._id, nombre: updatedUser.nombre, email: updatedUser.email, role: updatedUser.role, active: updatedUser.active }
+                user: {
+                    id: updatedUser._id,
+                    nombre: updatedUser.nombre,
+                    email: updatedUser.email,
+                    role: updatedUser.role,
+                    active: updatedUser.active,
+                    selectedAvatarUrl: updatedUser.selectedAvatarUrl // Devolver avatar
+                 }
             });
         } catch (error) {
              console.error('Error al actualizar usuario:', error);
@@ -236,24 +188,16 @@ const userController = {
         }
     },
 
-    // Eliminar usuario (sin cambios relevantes)
+    // Eliminar usuario (SIN CAMBIOS)
     deleteUser: async (req, res) => {
         try {
             const { id } = req.params;
-            if (!req.user || !req.user.companyId) {
-                return res.status(401).json({ success: false, message: 'No autenticado' });
-            }
-            if (id === req.user._id.toString()) {
-                return res.status(400).json({ success: false, message: 'No puedes eliminar tu propio usuario' });
-            }
+            if (!req.user || !req.user.companyId) { return res.status(401).json({ success: false, message: 'No autenticado' }); }
+            if (id === req.user._id.toString()) { return res.status(400).json({ success: false, message: 'No puedes eliminar tu propio usuario' }); }
             const user = await User.findOne({ _id: id, companyId: req.user.companyId });
-            if (!user) {
-                return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
-            }
+            if (!user) { return res.status(404).json({ success: false, message: 'Usuario no encontrado' }); }
             const isFirstAdmin = await User.findOne({ companyId: req.user.companyId, role: 'admin' }).sort({ createdAt: 1 });
-            if (isFirstAdmin && isFirstAdmin._id.toString() === id) {
-                return res.status(403).json({ success: false, message: 'No se puede eliminar al administrador principal' });
-            }
+            if (isFirstAdmin && isFirstAdmin._id.toString() === id) { return res.status(403).json({ success: false, message: 'No se puede eliminar al administrador principal' }); }
             await User.deleteOne({ _id: id });
             res.json({ success: true, message: 'Usuario eliminado correctamente' });
         } catch (error) {
@@ -262,44 +206,28 @@ const userController = {
         }
     },
 
-    // Restablecer contraseña (por parte del administrador)
-    // Mantenemos esta función separada, genera contraseña temporal y la envía por email (si está configurado)
+    // Restablecer contraseña (SIN CAMBIOS relevantes para el avatar)
     resetUserPassword: async (req, res) => {
         try {
             const { id } = req.params;
-            if (!req.user || !req.user.companyId || req.user.role !== 'admin') {
-                 // Permitir también al 'manager' restablecer contraseñas si se decide
-                return res.status(403).json({ success: false, message: 'No autorizado para restablecer contraseñas.' });
-            }
-
-             // No permitir restablecer la contraseña del admin principal
+             if (!req.user || !req.user.companyId || req.user.role !== 'admin') { return res.status(403).json({ success: false, message: 'No autorizado para restablecer contraseñas.' }); }
              const isFirstAdmin = await User.findOne({ companyId: req.user.companyId, role: 'admin' }).sort({ createdAt: 1 });
-             if (isFirstAdmin && isFirstAdmin._id.toString() === id) {
-                 return res.status(403).json({ success: false, message: 'No se puede restablecer la contraseña del administrador principal desde aquí.' });
-             }
-             // No permitir restablecer la propia contraseña desde aquí (usar cambio de contraseña)
-             if (req.user._id.toString() === id) {
-                  return res.status(400).json({ success: false, message: 'Usa la opción "Cambiar mi contraseña" para tu propia cuenta.' });
-             }
-
+             if (isFirstAdmin && isFirstAdmin._id.toString() === id) { return res.status(403).json({ success: false, message: 'No se puede restablecer la contraseña del administrador principal desde aquí.' }); }
+             if (req.user._id.toString() === id) { return res.status(400).json({ success: false, message: 'Usa la opción "Cambiar mi contraseña" para tu propia cuenta.' }); }
 
             const user = await User.findOne({ _id: id, companyId: req.user.companyId });
-            if (!user) {
-                return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
-            }
+            if (!user) { return res.status(404).json({ success: false, message: 'Usuario no encontrado' }); }
 
             const newPassword = crypto.randomBytes(10).toString('hex');
-            user.password = newPassword; // Mongoose pre-save hook will hash it
+            user.password = newPassword;
             await user.save();
 
-            // Enviar email con nueva contraseña (si el servicio está configurado)
             try {
                 const company = await Company.findById(req.user.companyId);
                 await emailService.sendPasswordResetByAdminEmail( user.email, { nombre: user.nombre, email: user.email, password: newPassword, companyName: company ? company.nombre : 'Tu Empresa', adminName: req.user.nombre });
                  res.json({ success: true, message: 'Contraseña restablecida. Se ha enviado un email con la nueva contraseña.' });
             } catch(emailError) {
                  console.error(`Contraseña restablecida para ${user.email}, pero falló envío de email:`, emailError);
-                 // Informar al admin que el email falló pero la contraseña sí se cambió
                  res.json({ success: true, message: 'Contraseña restablecida en el sistema, pero no se pudo enviar el email de notificación.' });
             }
 
@@ -314,11 +242,10 @@ const userController = {
         }
     },
 
-    // Actualizar propio perfil (usuario actual - sin cambios relevantes)
+    // Actualizar propio perfil
     updateProfile: async (req, res) => {
         try {
-            // Solo permitir actualizar nombre y quizás otros campos no sensibles
-            const { nombre } = req.body;
+            const { nombre } = req.body; // Permitir solo actualizar el nombre desde aquí por ahora
             if (!req.user) {
                 return res.status(401).json({ success: false, message: 'No autenticado' });
             }
@@ -327,16 +254,20 @@ const userController = {
                 return res.status(404).json({ success: false, message: 'Usuario no encontrado' });
             }
             if (nombre) user.nombre = nombre.trim();
-            // Añadir aquí otros campos que el usuario pueda modificar de sí mismo
-            // user.telefono = telefono;
-            // user.preferencias = preferencias;
+            // Aquí NO actualizamos el avatar, para eso usaremos la nueva función
 
             const updatedUser = await user.save();
             res.json({
                 success: true,
                 message: 'Perfil actualizado correctamente',
-                // Devolver solo la información necesaria y segura
-                user: { id: updatedUser._id, nombre: updatedUser.nombre, email: updatedUser.email, role: updatedUser.role }
+                // --- MODIFICADO: Devolver también el avatar actual ---
+                user: {
+                    id: updatedUser._id,
+                    nombre: updatedUser.nombre,
+                    email: updatedUser.email,
+                    role: updatedUser.role,
+                    selectedAvatarUrl: updatedUser.selectedAvatarUrl // Añadido
+                }
             });
         } catch (error) {
             console.error('Error al actualizar perfil:', error);
@@ -347,7 +278,61 @@ const userController = {
              }
             res.status(500).json({ success: false, message: 'Error al actualizar perfil', error: error.message });
         }
+    },
+
+    // --- INICIO: Nueva Función para Actualizar Avatar ---
+    updateMyAvatar: async (req, res) => {
+        try {
+            // Verificar autenticación
+            if (!req.user || !req.user._id) {
+                return res.status(401).json({ success: false, message: 'No autenticado.' });
+            }
+
+            // Obtener la URL del avatar del cuerpo de la solicitud
+            const { avatarUrl } = req.body;
+
+            // Validación básica: ¿Nos enviaron una URL?
+            if (!avatarUrl || typeof avatarUrl !== 'string' || avatarUrl.trim() === '') {
+                return res.status(400).json({ success: false, message: 'Se requiere la URL del avatar (avatarUrl).' });
+            }
+
+            // Opcional: Validar si la URL es una de las 6 permitidas
+            // if (!availableAvatarUrls.includes(avatarUrl)) {
+            //     return res.status(400).json({ success: false, message: 'La URL del avatar proporcionada no es válida.' });
+            // }
+
+            // Actualizar directamente en la base de datos
+            // Nota: Idealmente, esto iría en un user.service.js
+            const updatedUser = await User.findByIdAndUpdate(
+                req.user._id, // ID del usuario autenticado
+                { selectedAvatarUrl: avatarUrl.trim() }, // Campo a actualizar
+                { new: true, runValidators: true } // Opciones: devolver doc actualizado, correr validadores del schema
+            ).select('selectedAvatarUrl'); // Seleccionar solo el campo actualizado para devolver si se desea
+
+            if (!updatedUser) {
+                 // Esto no debería pasar si el usuario está autenticado, pero por si acaso
+                 return res.status(404).json({ success: false, message: 'Usuario no encontrado después de la actualización.' });
+            }
+
+            // Responder con éxito
+            res.json({
+                success: true,
+                message: 'Avatar actualizado correctamente.',
+                selectedAvatarUrl: updatedUser.selectedAvatarUrl // Devolver la nueva URL guardada
+            });
+
+        } catch (error) {
+            console.error('Error al actualizar avatar:', error);
+            if (error.name === 'ValidationError') { // Por si añadimos validaciones futuras a la URL
+                 const messages = Object.values(error.errors).map(val => val.message);
+                 const errorMessage = messages.join('. ');
+                 return res.status(400).json({ success: false, message: `Error de validación: ${errorMessage}` });
+             }
+            res.status(500).json({ success: false, message: 'Error interno del servidor al actualizar el avatar.' });
+        }
     }
+    // --- FIN: Nueva Función para Actualizar Avatar ---
+
 };
 
 module.exports = userController;

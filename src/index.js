@@ -369,14 +369,35 @@ app.post('/api/auth/reset-password', authController.resetPassword);
 app.get('/api/auth/me', authMiddleware.authenticateToken, authController.getMe); // Obtener datos del usuario logueado
 app.post('/api/auth/change-password', authMiddleware.authenticateToken, authController.changePassword); // Cambiar contraseña (logueado)
 
-// Rutas para gestión de usuarios (protegidas, mayormente admin)
-app.get('/api/users', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.getUsers);
+// --- INICIO: Rutas para gestión de usuarios (REORDENADAS Y MODIFICADAS) ---
+// PRIMERO las rutas más específicas como /profile o /me/avatar
+app.put('/api/users/profile', authMiddleware.authenticateToken, userController.updateProfile); // Usuario actualiza su propio perfil
+
+// IMPORTANTE: Ruta movida ANTES de las rutas con parámetros en /users
+app.patch('/api/users/me/avatar',
+  authMiddleware.authenticateToken,
+  (req, res, next) => {
+    // Middleware de depuración
+    console.log('Avatar update request received:');
+    // Asegúrate que authenticateToken añada req.user y que tenga _id o userId
+    console.log('User ID from token:', req.user?._id || req.user?.userId || 'N/A');
+    console.log('Body:', req.body);
+    next();
+  },
+  userController.updateMyAvatar // Llama al controlador final
+);
+
+// DESPUÉS las rutas con parámetros como /:id
 app.get('/api/users/:id', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.getUserById);
-app.post('/api/users', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionMiddleware.checkPlanLimits('users'), userController.createUser);
 app.put('/api/users/:id', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.updateUser);
 app.delete('/api/users/:id', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.deleteUser);
 app.post('/api/users/:id/reset-password', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.resetUserPassword); // Admin resetea contraseña de otro usuario
-app.put('/api/users/profile', authMiddleware.authenticateToken, userController.updateProfile); // Usuario actualiza su propio perfil
+
+// OTRAS rutas de /api/users (como GET /, POST /) pueden ir antes o después de las de :id, pero DESPUÉS de /profile y /me/avatar
+app.get('/api/users', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), userController.getUsers);
+app.post('/api/users', authMiddleware.authenticateToken, authMiddleware.checkRole(['admin']), subscriptionMiddleware.checkPlanLimits('users'), userController.createUser);
+// --- FIN: Rutas para gestión de usuarios ---
+
 
 // Rutas para suscripciones (protegidas, mayormente admin)
 app.get('/api/subscription', authMiddleware.authenticateToken, subscriptionController.getSubscriptionInfo);
