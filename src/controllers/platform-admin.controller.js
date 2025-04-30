@@ -354,7 +354,7 @@ const platformAdminController = {
             // Pasamos el ID del admin como 'createdBy' para saber quién la envió
             const notificationData = {
                 companyId,
-                title: `[Admin] ${title}`, // Prefijo para identificar notificaciones de admin
+                title: `[FactTech] ${title}`, // Prefijo para identificar notificaciones de admin
                 message,
                 type, // 'info', 'warning', 'success', 'error', etc.
                 createdBy: adminUserId, // Guardar quién la creó

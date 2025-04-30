@@ -38,7 +38,7 @@ const subscriptionMiddleware = require('./middleware/subscription.middleware');
 const notificationService = require('./services/notification.service');
 const platformAdminMiddleware = require('./middleware/platform-admin.middleware');
 const platformAdminController = require('./controllers/platform-admin.controller');
-
+const socketService = require('./services/socket.service'); // Importar el socketService
 
 const app = express();
 const server = http.createServer(app); // Crear servidor HTTP con Express
@@ -67,6 +67,17 @@ const io = require('socket.io')(server, {
         credentials: true // Permitir credenciales (cookies, etc.)
     }
 }); // Inicializar Socket.io con el servidor y la configuración CORS
+
+// --- Inicio Modificación: Hacer io accesible globalmente ---
+// Hacer que io sea accesible globalmente como fallback
+global.io = io;
+console.log('Instancia de Socket.IO asignada a global.io');
+// --- Fin Modificación ---
+
+// Inicializar el servicio de Socket con la instancia io (se mantiene)
+socketService.initialize(io);
+console.log('Socket service initialized with io instance');
+
 
 const port = process.env.PORT || 5002;
 const urlMongo = "mongodb://localhost:27017/testing";
@@ -190,17 +201,6 @@ io.on('connection', (socket) => {
         console.error(`Error en Socket.IO para usuario ${userId}:`, error);
     });
 });
-
-// --- Función para emitir notificaciones (accesible globalmente) ---
-// Se usa para que otros servicios (como el check de stock bajo) puedan enviar notificaciones
-function emitCompanyNotification(companyId, notification) {
-    const companyRoom = `company:${companyId}`;
-    console.log(`Emitiendo nueva notificación a la sala ${companyRoom}:`, notification.title);
-    io.to(companyRoom).emit('newNotification', notification);
-}
-// Exponer la función globalmente (considerar alternativas como inyección de dependencias si la app crece)
-global.emitCompanyNotification = emitCompanyNotification;
-
 
 // --- Funciones auxiliares (cleanOrphanFiles, storage, etc.) ---
 // Función para limpiar archivos huérfanos en 'uploads'
@@ -587,11 +587,11 @@ async function startServer() {
         console.log('[Tarea Programada] Ejecutando verificación de stock bajo...');
         try {
             const notifications = await notificationService.checkLowStockProducts();
-            // Emitir notificaciones a las empresas correspondientes vía Socket.IO
+            // Emitir notificaciones a las empresas correspondientes vía Socket.IO (usando socketService)
             notifications.forEach(notification => {
                 // Asegurarse que la notificación tiene companyId antes de emitir
                 if (notification.companyId) {
-                    emitCompanyNotification(notification.companyId.toString(), notification);
+                    socketService.emitCompanyNotification(notification.companyId.toString(), notification); // Usar socketService
                 } else {
                     console.warn('[Tarea Programada] Notificación de stock bajo sin companyId:', notification);
                 }
