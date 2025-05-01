@@ -141,34 +141,5 @@ const invoiceSchema = new Schema({
 // Asegura que el 'number' sea único DENTRO de cada 'companyId'
 invoiceSchema.index({ companyId: 1, number: 1 }, { unique: true });
 
-// Middleware pre-save para calcular totales o dueDate (ejemplo conceptual)
-// invoiceSchema.pre('save', function(next) {
-//     if (this.isModified('items') || this.isModified('taxRate')) { // Si cambian items o tasa de impuesto
-//         let calculatedSubtotal = 0;
-//         let calculatedTax = 0;
-//         const taxRate = 0.16; // Ejemplo, obtener de configuración
-//         this.items.forEach(item => {
-//             item.subtotal = item.quantity * item.price; // Calcular subtotal del item
-//             calculatedSubtotal += item.subtotal;
-//             if (!item.taxExempt) {
-//                 calculatedTax += item.subtotal * taxRate;
-//             }
-//         });
-//         this.subtotal = calculatedSubtotal;
-//         this.tax = calculatedTax;
-//         this.total = this.subtotal + this.tax; // Añadir lógica de descuentos si existe
-//     }
-//     if (this.isModified('date') || this.isModified('diasCredito')) {
-//         if (this.diasCredito > 0) {
-//             const dueDate = new Date(this.date);
-//             dueDate.setDate(dueDate.getDate() + this.diasCredito);
-//             this.dueDate = dueDate;
-//         } else {
-//             this.dueDate = this.date; // Vence el mismo día si es de contado
-//         }
-//     }
-//     next();
-// });
-
 
 module.exports = mongoose.model('Invoice', invoiceSchema);

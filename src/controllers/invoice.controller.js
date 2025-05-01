@@ -9,9 +9,9 @@ const {
     deleteInvoice,
     getInvoiceByNumber,
     updateInvoiceStatus
-} = require('../services/invoice.service'); 
+} = require('../services/invoice.service');
 
-// Importar modelo para la generación de números
+// Importar modelo para la generación de números (Aunque ya no se usa aquí directamente, podría ser necesario para otras partes)
 const Invoice = require('../models/invoice.model');
 // Importar servicio de monitoreo de stock y modelo de producto
 const stockMonitorService = require('../services/stock-monitor.service');
@@ -169,8 +169,10 @@ exports.createOrUpdateInvoice = async (req, res) => {
             // --- CREACIÓN ---
             console.log(`Controller - Creando nueva factura para CompanyId: ${companyId}`);
 
+            // ELIMINAR TODO ESTE BLOQUE DE CÓDIGO:
+            /*
             // Generar número único de factura POR COMPAÑÍA
-            const lastInvoice = await Invoice.findOne({ companyId: companyId }).sort({ createdAt: -1 }); // Buscar último por fecha de creación para esa compañía
+            const lastInvoice = await Invoice.findOne({ companyId: companyId }).sort({ createdAt: -1 });
             let nextNumber = 1;
             if (lastInvoice && lastInvoice.number && typeof lastInvoice.number === 'string') {
                  // Extraer número secuencial (asumiendo formato como 'INV-XXXX' o solo número)
@@ -191,6 +193,12 @@ exports.createOrUpdateInvoice = async (req, res) => {
                  return res.status(500).json({ message: 'Error al generar número de factura único. Intente nuevamente.' });
             }
             invoiceData.number = invoiceNumber;
+            */
+
+            // IMPORTANTE: Asegurar que el campo number esté vacío para que el servicio genere uno
+            // Si el frontend envía 'number', asegurarse que sea undefined o null antes de pasar a createInvoice.
+            // Opcionalmente, forzarlo a vacío aquí para garantizarlo:
+            delete invoiceData.number; // Eliminar explícitamente el número si vino del frontend en creación
 
             // Asignar valores por defecto si no vienen
             invoiceData.status = invoiceData.status || 'draft';
@@ -201,40 +209,40 @@ exports.createOrUpdateInvoice = async (req, res) => {
             invoiceData.terms = invoiceData.terms || '';
 
             // Llamar al servicio de creación pasando datos y companyId
-            // El servicio se encargará de asignar companyId y poblar
+            // El servicio se encargará de asignar companyId, generar número y poblar
             savedInvoice = await createInvoice(invoiceData, companyId);
         }
 
         // Después de guardar la factura, verificamos el stock de los productos
         if (savedInvoice && savedInvoice.items && savedInvoice.items.length > 0) {
             console.log('Verificando stock de productos tras facturación...');
-            
+
             // Para cada ítem de la factura
             for (const item of savedInvoice.items) {
                 if (item.product) {
                     try {
                         // Obtener el ID del producto (puede ser objeto o string)
                         const productId = typeof item.product === 'object' ? item.product._id : item.product;
-                        
+
                         // Obtener el producto COMPLETO de la base de datos
                         // IMPORTANTE: incluir explícitamente el companyId en la consulta para asegurarnos de que esté presente
                         const updatedProduct = await Product.findById(productId);
-                        
+
                         if (!updatedProduct) {
                             console.log(`Producto con ID ${productId} no encontrado`);
                             continue;
                         }
-                        
+
                         // Verificar explícitamente si tiene companyId
                         if (!updatedProduct.companyId) {
                             console.log(`Producto ${productId} (${updatedProduct.nombre}) no tiene companyId. Asignando el de la factura.`);
                             // Asignar el companyId de la factura al producto (sólo para la verificación)
                             updatedProduct.companyId = companyId;
                         }
-                        
+
                         if (updatedProduct.tipo === 'producto') {
                             console.log(`Verificando stock del producto: ${updatedProduct.nombre}, ID: ${updatedProduct._id}, CompanyId: ${updatedProduct.companyId}, Stock actual: ${updatedProduct.stock}`);
-                            
+
                             // Verificar si el stock está bajo y generar notificación si es necesario
                             await stockMonitorService.checkProductStockAfterUpdate(updatedProduct);
                         }
@@ -251,20 +259,28 @@ exports.createOrUpdateInvoice = async (req, res) => {
 
     } catch (error) {
         console.error('Controller - Error al guardar/actualizar la factura:', error.message);
+        // Log detallado del error para depuración
+        console.error(error);
         if (error.name === 'ValidationError') {
             const errors = Object.values(error.errors).map(el => el.message);
             return res.status(400).json({ message: `Error de validación: ${errors.join(', ')}` });
         }
-        if (error.message.includes('duplicate key') || error.message.includes('Ya existe una factura con este número')) {
-             return res.status(400).json({ message: 'Error: El número de factura ya existe para esta compañía.' });
+        // Capturar error específico de número duplicado desde el servicio
+        if (error.message.includes('Ya existe una factura con este número')) {
+            return res.status(400).json({ message: error.message });
+        }
+        // Capturar error específico de stock insuficiente desde el servicio
+        if (error.message.startsWith('STOCK_INSUFFICIENTE')) {
+            return res.status(400).json({ message: error.message });
         }
         if (error.message === 'Factura no encontrada o no tiene permiso para actualizarla') {
              return res.status(404).json({ message: error.message });
         }
-         if (error.message.startsWith('Cliente inválido') || error.message.startsWith('Producto inválido')) {
+        if (error.message.startsWith('Cliente inválido') || error.message.startsWith('Producto inválido')) {
              // Errores lanzados por validaciones de servicio (si se implementan)
              return res.status(400).json({ message: error.message });
-         }
+        }
+        // Error genérico
         res.status(500).json({ message: 'Error interno al procesar la factura.' });
     }
 };

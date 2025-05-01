@@ -2,6 +2,8 @@
 const mongoose = require('mongoose');
 const Invoice = require('../models/invoice.model'); // Asegúrate que la ruta sea correcta
 const Product = require('../models/product.model'); // Importar modelo de Producto
+// Añadir esta importación nueva
+const documentNumberingService = require('./document-numbering.service');
 
 // --- Helper para validar ObjectId (sin cambios) ---
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -139,7 +141,7 @@ const getInvoiceById = async (id, companyId) => {
 
 /**
  * Crear una nueva factura asociada a una compañía específica.
- * CON VALIDACIÓN Y ACTUALIZACIÓN DE STOCK.
+ * CON VALIDACIÓN Y ACTUALIZACIÓN DE STOCK Y GENERACIÓN AUTOMÁTICA DE NÚMERO.
  * @param {Object} invoiceData - Datos de la factura.
  * @param {string} companyId - ID de la compañía del usuario autenticado.
  * @returns {Promise<Object>} Factura creada.
@@ -158,24 +160,39 @@ const createInvoice = async (invoiceData, companyId) => {
         // Asignar el companyId a la factura
         invoiceData.companyId = companyId;
 
-        // --- 1. Verificar Stock y Preparar Actualizaciones ---
-        // Llama al helper DENTRO de la transacción
+        // --- NUEVO: Generar número de factura si no se proporciona ---
+        if (!invoiceData.number) {
+            // Obtener el tipo de documento (o 'invoice' por defecto)
+            const documentType = invoiceData.documentType || 'invoice';
+            // Generar el próximo número de documento (dentro de la transacción)
+            invoiceData.number = await documentNumberingService.getNextDocumentNumber(
+                companyId,
+                documentType,
+                session
+            );
+            console.log(`Servicio - Número de factura generado: ${invoiceData.number}`);
+        } else {
+            console.log(`Servicio - Usando número de factura proporcionado: ${invoiceData.number}`);
+        }
+
+        // --- Continúa con el código existente ---
+        // --- 1. Verificar Stock y Preparar Actualizaciones --- (Renumerado de código existente)
         const stockUpdatePromises = await checkAndPrepareStockUpdates(invoiceData.items, companyId, session);
 
-        // --- 2. Crear y Guardar la Factura ---
+        // --- 2. Crear y Guardar la Factura --- (Renumerado de código existente)
         const newInvoice = new Invoice(invoiceData);
         // Guardar DENTRO de la transacción
         const savedInvoice = await newInvoice.save({ session });
 
-        // --- 3. Ejecutar Actualizaciones de Stock ---
+        // --- 3. Ejecutar Actualizaciones de Stock --- (Renumerado de código existente)
         // Solo si la factura se guardó correctamente
         await Promise.all(stockUpdatePromises); // Ejecutar todas las promesas de $inc
 
-        // --- 4. Confirmar Transacción ---
+        // --- 4. Confirmar Transacción --- (Renumerado de código existente)
         await session.commitTransaction();
         console.log('Servicio - Transacción completada exitosamente para factura:', savedInvoice._id);
 
-        // --- 5. Poblar y Devolver ---
+        // --- 5. Poblar y Devolver --- (Renumerado de código existente)
         // Poblar FUERA de la transacción (es solo lectura)
         const populatedInvoice = await getInvoiceById(savedInvoice._id, companyId);
         console.log('Servicio - Factura creada y stock actualizado:', savedInvoice._id);
@@ -200,6 +217,7 @@ const createInvoice = async (invoiceData, companyId) => {
         session.endSession();
     }
 };
+
 
 /**
  * Actualizar una factura, asegurando que pertenezca a la compañía correcta.
@@ -252,12 +270,12 @@ const updateInvoice = async (id, invoiceData, companyId) => {
                 console.warn('Item original sin producto, ignorando:', oldItem);
                 continue;
             }
-            const productId = typeof oldItem.product === 'object' 
-                ? oldItem.product._id.toString() 
+            const productId = typeof oldItem.product === 'object'
+                ? oldItem.product._id.toString()
                 : oldItem.product.toString();
             originalItemsMap.set(productId, oldItem.quantity);
         }
-        
+
         console.log('Mapa de items originales creado con', originalItemsMap.size, 'productos');
 
         // Mapear items nuevos
@@ -272,7 +290,7 @@ const updateInvoice = async (id, invoiceData, companyId) => {
                 : newItem.product.toString();
             newItemsMap.set(productId, newItem.quantity);
         }
-        
+
         console.log('Mapa de nuevos items creado con', newItemsMap.size, 'productos');
 
         // Productos que estaban y ya no están (o cantidad 0) -> Aumentar stock
@@ -301,25 +319,25 @@ const updateInvoice = async (id, invoiceData, companyId) => {
         const productIdsToAdjust = Array.from(stockAdjustments.keys());
         let productsAndServicesToCheck = [];
         let productsToUpdate = [];
-        
+
         if (productIdsToAdjust.length > 0) {
             console.log('Buscando items para verificar:', productIdsToAdjust);
-            
+
             // Verificar que sean IDs válidos
             const validProductIds = productIdsToAdjust.filter(id => isValidObjectId(id));
             if (validProductIds.length !== productIdsToAdjust.length) {
-                console.error('Algunos IDs de productos no son válidos:', 
+                console.error('Algunos IDs de productos no son válidos:',
                     productIdsToAdjust.filter(id => !isValidObjectId(id)));
                 throw new Error('IDs de productos inválidos detectados');
             }
-            
+
             // CAMBIO IMPORTANTE: Primero buscar TODOS los items (productos Y servicios)
             productsAndServicesToCheck = await Product.find({
                 _id: { $in: validProductIds },
                 companyId: companyId
                 // Ya no filtramos por tipo: 'producto'
             }).session(session);
-            
+
             console.log(`Encontrados ${productsAndServicesToCheck.length} items para verificar de ${validProductIds.length} solicitados`);
 
             // Verificar que todos los items necesarios existen
@@ -437,7 +455,7 @@ const deleteInvoice = async (id, companyId) => {
    // Usar transacción para garantizar integridad entre la eliminación y la restauración de stock
    const session = await mongoose.startSession();
    session.startTransaction();
-   
+
    try {
        console.log('Servicio - Intentando eliminar factura con ID:', id, 'para CompanyId:', companyId);
        if (!isValidObjectId(id) || !isValidObjectId(companyId)) {
@@ -445,9 +463,9 @@ const deleteInvoice = async (id, companyId) => {
        }
 
        // Primero obtener la factura completa para conocer los productos y cantidades
-       const invoiceToDelete = await Invoice.findOne({ 
-           _id: id, 
-           companyId: companyId 
+       const invoiceToDelete = await Invoice.findOne({
+           _id: id,
+           companyId: companyId
        }).session(session);
 
        if (!invoiceToDelete) {
@@ -457,33 +475,33 @@ const deleteInvoice = async (id, companyId) => {
 
        // Restaurar stock solo para productos (no servicios)
        const stockUpdatePromises = [];
-       
+
        // Solo procesar si hay items
        if (invoiceToDelete.items && invoiceToDelete.items.length > 0) {
            // Obtener todos los IDs de productos para consultar su tipo
            const productIds = invoiceToDelete.items.map(item => item.product);
-           
+
            // Buscar todos los productos relevantes
            const products = await Product.find({
                _id: { $in: productIds },
                companyId: companyId,
                tipo: 'producto' // Solo restaurar stock para tipo 'producto'
            }).session(session);
-           
+
            // Crear un mapa para acceso rápido
            const productMap = new Map(products.map(p => [p._id.toString(), p]));
-           
+
            // Procesar cada ítem de la factura
            for (const item of invoiceToDelete.items) {
                const productId = item.product.toString();
                const product = productMap.get(productId);
-               
+
                // Solo restaurar stock si es un producto físico
                if (product) {
                    const quantityToRestore = item.quantity;
-                   
+
                    console.log(`Servicio - Restaurando ${quantityToRestore} unidades al stock del producto ${product.nombre} (ID: ${productId})`);
-                   
+
                    // Actualizar el stock sumando la cantidad
                    stockUpdatePromises.push(
                        Product.findByIdAndUpdate(
@@ -494,30 +512,30 @@ const deleteInvoice = async (id, companyId) => {
                    );
                }
            }
-           
+
            // Ejecutar todas las actualizaciones de stock
            await Promise.all(stockUpdatePromises);
        }
 
        // Finalmente eliminar la factura
-       const deletedInvoice = await Invoice.findOneAndDelete({ 
-           _id: id, 
-           companyId: companyId 
+       const deletedInvoice = await Invoice.findOneAndDelete({
+           _id: id,
+           companyId: companyId
        }).session(session);
 
        // Confirmar la transacción
        await session.commitTransaction();
-       
+
        console.log('Servicio - Factura eliminada exitosamente y stock restaurado:', id);
        return deletedInvoice;
-       
+
    } catch (error) {
        // Revertir la transacción en caso de error
        await session.abortTransaction();
-       
+
        console.error('Servicio - Error al eliminar la factura (transacción abortada):', error);
        throw new Error(`Error al eliminar la factura: ${error.message}`);
-       
+
    } finally {
        // Siempre finalizar la sesión
        session.endSession();
@@ -569,7 +587,7 @@ const getInvoiceByNumber = async (number, companyId) => {
 const updateInvoiceStatus = async (id, status, companyId) => {
     const session = await mongoose.startSession();
     session.startTransaction();
-    
+
     try {
         console.log('Servicio - Actualizando estado de factura:', id, 'a', status, 'para CompanyId:', companyId);
         if (!isValidObjectId(id) || !isValidObjectId(companyId)) {
@@ -577,9 +595,9 @@ const updateInvoiceStatus = async (id, status, companyId) => {
         }
 
         // Obtener la factura actual para verificar su estado actual
-        const currentInvoice = await Invoice.findOne({ 
-            _id: id, 
-            companyId: companyId 
+        const currentInvoice = await Invoice.findOne({
+            _id: id,
+            companyId: companyId
         }).session(session);
 
         if (!currentInvoice) {
@@ -588,46 +606,46 @@ const updateInvoiceStatus = async (id, status, companyId) => {
         }
 
         // Determinar si necesitamos restaurar inventario
-        // Asumimos que restauramos stock sólo si pasamos a 'cancelled' 
+        // Asumimos que restauramos stock sólo si pasamos a 'cancelled'
         // y el estado actual NO es 'cancelled' o 'draft'
         const needToRestoreStock = (
-            status === 'cancelled' && 
-            currentInvoice.status !== 'cancelled' && 
+            status === 'cancelled' &&
+            currentInvoice.status !== 'cancelled' &&
             currentInvoice.status !== 'draft'
         );
 
         // Procesar restauración de stock si es necesario
         if (needToRestoreStock && currentInvoice.items && currentInvoice.items.length > 0) {
             console.log('Servicio - Restaurando stock por cancelación de factura:', id);
-            
+
             // Obtener todos los IDs de productos para consultar su tipo
-            const productIds = currentInvoice.items.map(item => 
+            const productIds = currentInvoice.items.map(item =>
                 typeof item.product === 'object' ? item.product._id : item.product
             );
-            
+
             // Buscar todos los productos relevantes
             const products = await Product.find({
                 _id: { $in: productIds },
                 companyId: companyId,
                 tipo: 'producto' // Solo restaurar stock para tipo 'producto'
             }).session(session);
-            
+
             // Crear un mapa para acceso rápido
             const productMap = new Map(products.map(p => [p._id.toString(), p]));
-            
+
             // Procesar cada ítem de la factura
             const stockUpdatePromises = [];
             for (const item of currentInvoice.items) {
-                const productId = (typeof item.product === 'object' ? 
+                const productId = (typeof item.product === 'object' ?
                     item.product._id : item.product).toString();
                 const product = productMap.get(productId);
-                
+
                 // Solo restaurar stock si es un producto físico
                 if (product) {
                     const quantityToRestore = item.quantity;
-                    
+
                     console.log(`Servicio - Restaurando ${quantityToRestore} unidades al stock del producto ${product.nombre} (ID: ${productId}) por cancelación`);
-                    
+
                     // Actualizar el stock sumando la cantidad
                     stockUpdatePromises.push(
                         Product.findByIdAndUpdate(
@@ -638,7 +656,7 @@ const updateInvoiceStatus = async (id, status, companyId) => {
                     );
                 }
             }
-            
+
             // Ejecutar todas las actualizaciones de stock
             await Promise.all(stockUpdatePromises);
         }
@@ -652,26 +670,26 @@ const updateInvoiceStatus = async (id, status, companyId) => {
 
         // Confirmar la transacción
         await session.commitTransaction();
-        
+
         // Poblar los datos para la respuesta (fuera de la transacción)
         const populatedInvoice = await Invoice.findById(updatedInvoice._id)
             .populate('client')
             .populate({ path: 'items.product', model: 'Product' });
-            
+
         console.log('Servicio - Estado de factura actualizado exitosamente:', updatedInvoice._id);
         return populatedInvoice;
-        
+
     } catch (error) {
         // Revertir la transacción en caso de error
         await session.abortTransaction();
-        
+
         console.error('Servicio - Error al actualizar estado de la factura (transacción abortada):', error);
         if (error.name === 'ValidationError') {
             const errors = Object.values(error.errors).map(el => el.message);
             throw new Error(`Error de validación: ${errors.join(', ')}`);
         }
         throw new Error(`Error al actualizar estado de la factura: ${error.message}`);
-        
+
     } finally {
         // Siempre finalizar la sesión
         session.endSession();

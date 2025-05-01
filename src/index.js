@@ -33,12 +33,16 @@ const authController = require('./controllers/auth.controller');
 const userController = require('./controllers/user.controller');
 const subscriptionController = require('./controllers/subscription.controller');
 const notificationController = require('./controllers/notification.controller');
+const documentNumberingController = require('./controllers/document-numbering.controller'); // Controlador para rutas existentes
 const authMiddleware = require('./middleware/auth.middleware');
 const subscriptionMiddleware = require('./middleware/subscription.middleware');
 const notificationService = require('./services/notification.service');
+// Importar servicio para la nueva ruta
+const documentNumberingService = require('./services/document-numbering.service');
 const platformAdminMiddleware = require('./middleware/platform-admin.middleware');
 const platformAdminController = require('./controllers/platform-admin.controller');
 const socketService = require('./services/socket.service'); // Importar el socketService
+
 
 const app = express();
 const server = http.createServer(app); // Crear servidor HTTP con Express
@@ -578,6 +582,59 @@ app.post('/api/documents/:id/convert-to-invoice', // Convertir cotización a fac
     subscriptionMiddleware.checkPlanLimits('invoices'), // Asegurarse que hay cupo para una nueva factura
     documentController.convertToInvoice
 );
+
+// --- Rutas para numeración de documentos (inline) ---
+app.get('/api/document-numbering/:companyId/:documentType',
+    authMiddleware.authenticateToken,
+    documentNumberingController.getDocumentNumberingConfig
+);
+
+app.put('/api/document-numbering/:companyId/:documentType',
+    authMiddleware.authenticateToken,
+    authMiddleware.checkRole(['admin']), // Solo admin puede modificar la configuración
+    documentNumberingController.updateDocumentNumberingConfig
+);
+
+app.get('/api/document-numbering/:companyId/:documentType/preview',
+    authMiddleware.authenticateToken,
+    documentNumberingController.previewNextDocumentNumber
+);
+
+// --- INICIO MODIFICACIÓN: Ruta para verificar estado de numeración ---
+app.get('/api/document-numbering/:companyId/:documentType/status',
+    authMiddleware.authenticateToken,
+    async (req, res) => {
+        try {
+            const { companyId, documentType } = req.params;
+
+            // Verificar permisos
+            if (req.user.companyId !== companyId && !req.user.isPlatformAdmin) {
+                return res.status(403).json({
+                    success: false,
+                    message: 'No tiene permiso para acceder a esta información'
+                });
+            }
+
+            // Obtener estado actual de numeración
+            const numbering = await documentNumberingService.verifyNumberingState(companyId, documentType);
+
+            return res.status(200).json({
+                success: true,
+                data: numbering
+            });
+        } catch (error) {
+            // Loggear el error en el servidor para depuración
+            console.error(`Error verificando estado de numeración para ${companyId}/${documentType}:`, error);
+            return res.status(500).json({
+                success: false,
+                // Enviar un mensaje genérico al cliente, el detalle ya está en el log del servidor
+                message: 'Error al verificar el estado de la numeración.'
+                // message: error.message // Opcional: enviar el mensaje de error original si es seguro
+            });
+        }
+    }
+);
+// --- FIN MODIFICACIÓN ---
 
 
 // --- Conexión a Base de Datos e Inicio del Servidor ---
