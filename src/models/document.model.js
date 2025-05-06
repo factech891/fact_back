@@ -133,8 +133,8 @@ const documentSchema = new Schema({
 });
 
 // --- Índice Compuesto Único ---
-// Asegura que el 'documentNumber' sea único DENTRO de cada 'companyId'
-documentSchema.index({ companyId: 1, documentNumber: 1 }, { unique: true });
+// Asegura que el 'documentNumber' sea único DENTRO de cada 'companyId' y 'type'
+documentSchema.index({ companyId: 1, type: 1, documentNumber: 1 }, { unique: true });
 
 // Middleware pre-save (opcional) para calcular totales, etc.
 // documentSchema.pre('save', function(next) {

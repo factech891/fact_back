@@ -1,10 +1,12 @@
 // controllers/document.controller.js
 const mongoose = require('mongoose');
-const Document = require('../models/document.model'); // Necesario para generación de número y validación
-const Invoice = require('../models/invoice.model'); // Necesario para generación de número de factura
+const Document = require('../models/document.model'); // Necesario para validación
+const Invoice = require('../models/invoice.model'); // Necesario para conversión
 // Importar funciones del servicio adaptado
 const documentService = require('../services/document.service');
 const invoiceService = require('../services/invoice.service'); // Usar servicio de factura adaptado
+// Importar el servicio de numeración
+const documentNumberingService = require('../services/document-numbering.service');
 
 // Helper para validar ObjectId
 const isValidObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
@@ -114,7 +116,7 @@ exports.getPendingDocuments = async (req, res) => {
 
 /**
  * Crear un nuevo documento para la compañía del usuario.
- * (Sin cambios - Recordar que no valida stock aquí)
+ * UTILIZA el servicio de numeración.
  */
 exports.createDocument = async (req, res) => {
    try {
@@ -136,24 +138,17 @@ exports.createDocument = async (req, res) => {
              return res.status(400).json({ message: 'Se requiere al menos un ítem en el documento.' });
         }
 
-       const prefix = getDocumentPrefix(documentData.type);
-       const lastDocument = await Document.findOne({ companyId: companyId, type: documentData.type })
-            .sort({ createdAt: -1 });
-       let nextNumber = 1;
-       if (lastDocument && lastDocument.documentNumber) {
-           const match = lastDocument.documentNumber.match(/^[A-Z]+(?:-[A-Z]+)*-(\d+)$/);
-           if (match && match[1]) {
-               nextNumber = parseInt(match[1], 10) + 1;
-           }
-       }
-       const documentNumber = `${prefix}-${String(nextNumber).padStart(5, '0')}`;
-       documentData.documentNumber = documentNumber;
-       const existingNumber = await documentService.getDocumentByNumber(documentNumber, companyId);
-        if (existingNumber) {
-            console.error(`Controller [createDocument] - Error: Número de documento generado ${documentNumber} ya existe para CompanyId ${companyId}`);
-            return res.status(500).json({ message: 'Error al generar número de documento único. Intente nuevamente.' });
-        }
+        // --- INICIO MODIFICACIÓN: Generación de número usando el servicio ---
+        const documentType = documentData.type.toLowerCase(); // 'quote', 'proforma', etc.
+        // El servicio de numeración debe manejar la atomicidad y la prevención de duplicados
+        documentData.documentNumber = await documentNumberingService.getNextDocumentNumber(
+            companyId,
+            documentType
+        );
+        console.log(`Controller [createDocument] - Número de documento generado: ${documentData.documentNumber}`);
+        // --- FIN MODIFICACIÓN ---
 
+       // --- Cálculo de totales ---
        let calculatedSubtotal = 0;
        let calculatedTax = 0;
        const processedItems = documentData.items.map(item => {
@@ -179,8 +174,9 @@ exports.createDocument = async (req, res) => {
            };
        });
 
+       // Construir el objeto final para el servicio de creación de documentos
        const newDocumentData = {
-           documentNumber: documentNumber,
+           documentNumber: documentData.documentNumber, // Usar el número generado por el servicio
            client: documentData.client,
            type: documentData.type,
            currency: documentData.currency || 'USD',
@@ -195,6 +191,7 @@ exports.createDocument = async (req, res) => {
            status: documentData.status || 'DRAFT'
        };
 
+       // Llamar al servicio de creación de documentos
        const document = await documentService.createDocument(newDocumentData, companyId);
        res.status(201).json(document);
 
@@ -204,12 +201,14 @@ exports.createDocument = async (req, res) => {
             const errors = Object.values(error.errors).map(el => el.message);
             return res.status(400).json({ message: `Error de validación: ${errors.join(', ')}` });
         }
-        if (error.message.includes('duplicate key') || error.message.includes('Ya existe un documento con este número')) {
+        // Capturar error de número duplicado del servicio de numeración
+        if (error.message.includes('Ya existe un documento con este número')) {
              return res.status(400).json({ message: 'Error: El número de documento ya existe para esta compañía y tipo.' });
         }
        res.status(500).json({ message: error.message || 'Error interno al crear el documento.' });
    }
 };
+
 
 /**
  * Actualizar un documento, verificando que pertenezca a la compañía del usuario.
@@ -372,12 +371,13 @@ exports.updateDocumentStatus = async (req, res) => {
 
 /**
  * Convertir un documento (ej. Cotización) a Factura para la compañía del usuario.
+ * DELEGA la generación del número de factura al servicio de facturas.
  */
 exports.convertToInvoice = async (req, res) => {
     try {
-        const { id } = req.params;
-        const invoiceModalData = req.body;
-        const companyId = req.user?.companyId;
+        const { id } = req.params; // ID del documento a convertir
+        const invoiceModalData = req.body; // Datos adicionales del modal (status, paymentTerms, etc.)
+        const companyId = req.user?.companyId; // ID de la compañía
 
         if (!companyId || !isValidObjectId(companyId)) {
             console.error('Controller [convertToInvoice] - Error: companyId inválido o no encontrado en req.user');
@@ -396,55 +396,44 @@ exports.convertToInvoice = async (req, res) => {
         if (originalDocument.status === 'CONVERTED') {
             return res.status(400).json({ message: 'Este documento ya ha sido convertido a factura.' });
         }
-        // Añadir más validaciones si es necesario
+        // Añadir más validaciones si es necesario (ej: solo convertir 'QUOTE' o 'PROFORMA')
 
-        // 3. Generar número único de factura
-        const invoicePrefix = 'INV';
-        const lastInvoice = await Invoice.findOne({ companyId: companyId }).sort({ createdAt: -1 });
-        let nextInvoiceNumber = 1;
-        if (lastInvoice && lastInvoice.number) {
-            const match = lastInvoice.number.match(/^[A-Z]+(?:-[A-Z]+)*-(\d+)$/);
-            if (match && match[1]) {
-                nextInvoiceNumber = parseInt(match[1], 10) + 1;
-            }
-        }
-        const generatedInvoiceNumber = `${invoicePrefix}-${String(nextInvoiceNumber).padStart(5, '0')}`;
-        const existingInvoiceNumber = await invoiceService.getInvoiceByNumber(generatedInvoiceNumber, companyId);
-         if (existingInvoiceNumber) {
-             console.error(`Controller [convertToInvoice] - Error: Número de factura generado ${generatedInvoiceNumber} ya existe para CompanyId ${companyId}`);
-             return res.status(500).json({ message: 'Error al generar número de factura único. Intente nuevamente.' });
-         }
+        // 3. NO generar número de factura aquí. Se delega a invoiceService.createInvoice
 
-        // 4. Preparar datos para la nueva factura
+        // 4. Preparar datos para la nueva factura (sin el campo 'number')
         const invoiceToCreate = {
-            number: generatedInvoiceNumber,
+            // number: undefined, // Dejar que el servicio de factura lo genere
             client: originalDocument.client._id || originalDocument.client,
             items: originalDocument.items.map(item => ({
                 product: item.product._id || item.product,
                 quantity: item.quantity,
                 price: item.price,
                 taxExempt: item.taxExempt,
-                subtotal: item.subtotal // Asegúrate que el servicio de factura recalcule si es necesario
+                subtotal: item.subtotal
             })),
             subtotal: originalDocument.subtotal,
-            tax: originalDocument.taxAmount,
+            tax: originalDocument.taxAmount, // Mapear taxAmount a tax
             total: originalDocument.total,
-            moneda: originalDocument.currency,
+            moneda: originalDocument.currency, // Mapear currency a moneda
             notes: originalDocument.notes,
             terms: originalDocument.terms,
-            status: invoiceModalData?.status?.toLowerCase() || 'pending',
-            date: normalizeDate(new Date()),
-            paymentTerms: invoiceModalData?.paymentTerms || 'Contado',
-            creditDays: invoiceModalData?.creditDays !== undefined ? invoiceModalData.creditDays : 0,
+            status: invoiceModalData?.status?.toLowerCase() || 'pending', // Usar estado del modal o 'pending'
+            date: normalizeDate(new Date()), // Fecha actual como fecha de factura
+            condicionesPago: invoiceModalData?.paymentTerms || 'Contado', // Usar términos del modal o 'Contado'
+            diasCredito: invoiceModalData?.creditDays !== undefined ? invoiceModalData.creditDays : 0, // Usar días del modal o 0
+            documentType: 'invoice', // Indicar tipo para el servicio de numeración (si es necesario dentro de createInvoice)
             // originalDocument: originalDocument._id // Referencia opcional
         };
 
-        // 5. Crear la factura usando el SERVICIO de facturas (¡Aquí ocurre la validación de stock!)
+        // 5. Crear la factura usando el SERVICIO de facturas
+        // Este servicio ahora debe llamar internamente a documentNumberingService
+        // y manejar la validación de stock
         const newInvoice = await invoiceService.createInvoice(invoiceToCreate, companyId);
 
         // 6. Actualizar el documento original usando el SERVICIO de documentos
         const updatedDocument = await documentService.convertToInvoice(id, newInvoice._id, companyId);
 
+        console.log(`Controller [convertToInvoice] - Factura creada ${newInvoice._id} desde Documento ${id}`);
         res.status(200).json({
             message: 'Documento convertido a factura exitosamente.',
             document: updatedDocument,
@@ -453,36 +442,38 @@ exports.convertToInvoice = async (req, res) => {
 
     } catch (error) {
         console.error(`Controller [convertToInvoice] - Error convirtiendo documento ${req.params.id} a factura:`, error.message);
+        console.error(error.stack); // Log completo del stacktrace para depuración
 
-        // --- MODIFICACIÓN: Manejar error de STOCK_INSUFFICIENTE ---
+        // Manejar error de STOCK_INSUFFICIENTE
         if (error.message.startsWith('STOCK_INSUFFICIENTE')) {
-            // Devolver 400 Bad Request con el mensaje específico del servicio
             return res.status(400).json({ message: error.message });
         }
-        // --- FIN MODIFICACIÓN ---
-
-        // Mantener manejo de otros errores
+        // Manejar error de número duplicado (desde createInvoice -> documentNumberingService)
+        if (error.message.includes('Ya existe una factura con este número') || error.message.includes('Ya existe un documento con este número')) { // Incluir ambos casos por si acaso
+            return res.status(400).json({ message: error.message });
+        }
+        // Otros errores específicos
         if (error.message.startsWith('Documento no encontrado') || error.message.startsWith('Factura no encontrada')) {
              return res.status(404).json({ message: error.message });
         }
         if (error.message.includes('ya ha sido convertido')) {
              return res.status(400).json({ message: error.message });
         }
-         if (error.message.startsWith('Producto inválido') || error.message.startsWith('Cliente inválido')) {
-             // Si el servicio de creación de factura lanza estos errores
+         if (error.message.startsWith('Producto inválido') || error.message.startsWith('Cliente inválido') || error.message.startsWith('Cantidad inválida')) {
              return res.status(400).json({ message: error.message });
          }
         if (error.name === 'ValidationError') {
              const errors = Object.values(error.errors).map(el => el.message);
              return res.status(400).json({ message: `Error de validación: ${errors.join(', ')}` });
         }
-        // Error genérico si no coincide con los anteriores
-        res.status(500).json({ message: error.message || 'Error interno al convertir el documento a factura.' });
+        // Error genérico
+        res.status(500).json({ message: 'Error interno al convertir el documento a factura.' });
     }
 };
 
 
-// Función auxiliar para obtener prefijo (sin cambios)
+// Función auxiliar para obtener prefijo (no se usa para factura, pero se mantiene para documentos)
+// DEPRECATED if documentNumberingService handles prefixes
 function getDocumentPrefix(type) {
     switch (type?.toUpperCase()) {
         case 'QUOTE': return 'COT';

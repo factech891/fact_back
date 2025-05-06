@@ -1,9 +1,6 @@
 // services/document.service.js
 const mongoose = require('mongoose');
-const Document = require('../models/document.model'); // Asegúrate que la ruta sea correcta
-// Podrías necesitar Client y Product para validaciones
-// const Client = require('../models/client.model');
-// const Product = require('../models/product.model');
+const Document = require('../models/document.model'); 
 
 /**
  * Obtener todos los documentos de una compañía específica.
@@ -114,11 +111,6 @@ const createDocument = async (documentData, companyId) => {
 
        // Asignar el companyId al documento
        documentData.companyId = companyId;
-
-       // Validación opcional: verificar que cliente y productos pertenezcan a la compañía
-       // const client = await Client.findOne({ _id: documentData.client, companyId: companyId });
-       // if (!client) throw new Error('Cliente inválido o no pertenece a esta compañía.');
-       // ... validación de productos ...
 
        const newDocument = new Document(documentData);
        const savedDocument = await newDocument.save();
@@ -283,13 +275,7 @@ const updateDocumentStatus = async (id, status, companyId) => {
            console.error('Servicio - ID de compañía inválido para actualizar estado:', companyId);
            throw new Error('ID de compañía inválido');
        }
-       // Validar que el estado sea uno de los permitidos por el enum del modelo (si existe)
-       // const validStatuses = Document.schema.path('status').enumValues;
-       // if (!validStatuses.includes(status)) {
-       //     throw new Error(`Estado inválido: ${status}`);
-       // }
-
-       // Buscar y actualizar estado solo si el _id y companyId coinciden
+     
        const updatedDocument = await Document.findOneAndUpdate(
            { _id: id, companyId: companyId }, // Condición
            { status: status }, // Datos a actualizar

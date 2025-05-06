@@ -5,37 +5,80 @@ const DocumentNumbering = require('../models/document-numbering.model');
 /**
  * Obtiene y actualiza el siguiente número de documento de forma atómica.
  * @param {string} companyId - ID de la compañía.
- * @param {string} documentType - Tipo de documento ('invoice', 'credit_note', etc).
+ * @param {string} documentType - Tipo de documento ('invoice', 'quote', etc).
  * @param {mongoose.ClientSession} [session] - Sesión de Mongoose (opcional).
  * @returns {Promise<string>} - Número de documento formateado (con prefijo).
  */
 const getNextDocumentNumber = async (companyId, documentType = 'invoice', session = null) => {
     try {
+        // Agregar log para depuración
+        console.log(`Recibido tipo de documento: "${documentType}"`);
+        
+        // Normalizar el tipo de documento (eliminar guiones bajos y convertir a minúsculas)
+        const normalizedType = documentType.toLowerCase().replace(/_/g, '');
+        console.log(`Tipo normalizado para comparación: "${normalizedType}"`);
+
+        // Determinar el prefijo correcto según el tipo de documento normalizado
+        let prefix;
+        switch (normalizedType) {
+            case 'invoice':
+                prefix = 'FAC';
+                break;
+            case 'quote':
+                prefix = 'COT';
+                break;
+            case 'proforma':
+                prefix = 'PRO';
+                break;
+            case 'deliverynote':
+                prefix = 'ALB';
+                break;
+            case 'creditnote':
+                prefix = 'NC';
+                break;
+            case 'debitnote':
+                prefix = 'ND';
+                break;
+            default:
+                prefix = 'DOC';
+                console.log(`Tipo de documento no reconocido: "${documentType}", usando prefijo genérico: "DOC"`);
+        }
+
+        console.log(`Prefijo seleccionado: "${prefix}" para tipo "${documentType}"`);
+
         // Opciones para la actualización
         const options = {
-            new: true,
-            upsert: true,
+            new: true, // Devuelve el documento actualizado
+            upsert: true, // Crea el documento si no existe
             runValidators: true
         };
-        
+
         if (session) {
             options.session = session;
         }
+
+        // Usar el tipo original (no el normalizado) para buscar en la base de datos
+        // para mantener la compatibilidad con registros existentes
+        const originalType = documentType.toLowerCase();
         
-        // IMPORTANTE: Asegurarnos que el lastNumber NUNCA se restablece incluso después de eliminar
-        // Para esto, usamos upsert pero solo incrementamos si el documento ya existe o no existe
+        // Buscar o crear el contador para esta empresa y tipo de documento
+        // MODIFICACIÓN: Ahora actualizamos el prefijo siempre, no solo en la inserción
         const numbering = await DocumentNumbering.findOneAndUpdate(
-            { companyId, documentType },
-            { $inc: { lastNumber: 1 } },
+            { companyId, documentType: originalType },
+            { 
+                $inc: { lastNumber: 1 }, 
+                $set: { prefix: prefix } // Actualizar el prefijo siempre
+            },
             options
         );
-        
-        // Formatear el número con el prefijo y padding
-        const formattedNumber = `${numbering.prefix}${numbering.lastNumber.toString().padStart(numbering.padding, '0')}`;
-        
+
+        // CORRECCIÓN: Asegurar que no haya doble guión en el formato
+        // Formateamos el número con un solo guión entre el prefijo y el número
+        const formattedNumber = `${prefix}-${numbering.lastNumber.toString().padStart(5, '0')}`;
+
         // Agregar log para depuración
-        console.log(`Servicio - Número generado para ${documentType} de compañía ${companyId}: ${formattedNumber} (contador: ${numbering.lastNumber})`);
-        
+        console.log(`Servicio - Número generado para ${documentType} de compañía ${companyId}: ${formattedNumber} (contador: ${numbering.lastNumber}, prefijo usado: ${prefix})`);
+
         return formattedNumber;
     } catch (error) {
         console.error('Error al obtener el siguiente número de documento:', error);
@@ -57,24 +100,24 @@ const updateDocumentNumberingConfig = async (companyId, documentType, config) =>
             upsert: true,
             runValidators: true
         };
-        
+
         // Actualizamos solo los campos proporcionados
         const updateData = {};
         if (config.prefix !== undefined) updateData.prefix = config.prefix;
-        if (config.padding !== undefined) updateData.padding = Number(padding);
-        
+        if (config.padding !== undefined) updateData.padding = Number(config.padding);
+
         // Si no hay datos para actualizar, no hacemos nada
         if (Object.keys(updateData).length === 0) {
             throw new Error('No se proporcionaron datos para actualizar.');
         }
-        
+
         // Actualizar la configuración
         const numbering = await DocumentNumbering.findOneAndUpdate(
-            { companyId, documentType },
+            { companyId, documentType: documentType.toLowerCase() },
             updateData,
             options
         );
-        
+
         return numbering;
     } catch (error) {
         console.error('Error al actualizar la configuración de numeración:', error);
@@ -90,7 +133,10 @@ const updateDocumentNumberingConfig = async (companyId, documentType, config) =>
  */
 const getDocumentNumberingConfig = async (companyId, documentType) => {
     try {
-        return await DocumentNumbering.findOne({ companyId, documentType });
+        return await DocumentNumbering.findOne({
+            companyId,
+            documentType: documentType.toLowerCase()
+        });
     } catch (error) {
         console.error('Error al obtener la configuración de numeración:', error);
         throw new Error(`Error al obtener la configuración: ${error.message}`);
@@ -106,8 +152,11 @@ const getDocumentNumberingConfig = async (companyId, documentType) => {
  */
 const verifyNumberingState = async (companyId, documentType) => {
     try {
-        const numbering = await DocumentNumbering.findOne({ companyId, documentType });
-        console.log(`Estado actual de numeración para ${documentType} de compañía ${companyId}:`, 
+        const numbering = await DocumentNumbering.findOne({
+            companyId,
+            documentType: documentType.toLowerCase()
+        });
+        console.log(`Estado actual de numeración para ${documentType} de compañía ${companyId}:`,
             numbering ? `Último número: ${numbering.lastNumber}, Prefijo: ${numbering.prefix}` : 'No existe configuración');
         return numbering;
     } catch (error) {
