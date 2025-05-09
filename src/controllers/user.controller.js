@@ -84,7 +84,8 @@ const userController = {
                 password: password,
                 companyId: req.user.companyId,
                 role: role,
-                active: true
+                active: true,
+                isEmailVerified: true
                 // selectedAvatarUrl usará el default del schema
             });
 

@@ -48,19 +48,25 @@ const userSchema = new Schema({
     },
     resetPasswordToken: String,
     resetPasswordExpires: Date,
-    // --- INICIO: Campo Nuevo Añadido ---
     selectedAvatarUrl: {
         type: String,
         required: false, // No es obligatorio que el usuario elija uno
         trim: true,
         default: defaultAvatarUrl // Por defecto, mostramos el primer avatar
     },
-    // --- FIN: Campo Nuevo Añadido ---
     timezone: {
         type: String,
         default: '', // Sin valor predeterminado fijo
         required: false // Opcional a nivel usuario
-    }
+    },
+    // --- INICIO: Campos para verificación de email ---
+    isEmailVerified: {
+        type: Boolean,
+        default: false
+    },
+    emailVerificationToken: String,
+    emailVerificationTokenExpires: Date,
+    // --- FIN: Campos para verificación de email ---
 }, { timestamps: true });
 
 // Método pre-save para hash de contraseña
@@ -100,7 +106,8 @@ userSchema.methods.comparePassword = async function(candidatePassword) {
 // Índices
 userSchema.index({ companyId: 1 }); // Índice para buscar por compañía
 userSchema.index({ companyId: 1, role: 1 }); // Índice compuesto para buscar usuarios de una compañía por rol
-// Nota: El índice en email ya se crea automáticamente por `unique: true`
+
+userSchema.index({ emailVerificationToken: 1 }); // Índice para buscar por token de verificación de email
 
 
 module.exports = mongoose.model('User', userSchema);

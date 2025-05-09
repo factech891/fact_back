@@ -51,7 +51,7 @@ const server = http.createServer(app); // Crear servidor HTTP con Express
 // Lista de orígenes permitidos
 const allowedOrigins = [
     process.env.FRONTEND_URL || 'http://localhost:3000', // Origen desde variable de entorno o localhost:3000
-    'http://192.168.1.45:3000' // Añadir explícitamente la IP local desde donde accedes
+    'http://192.168.1.47:3000' // Añadir explícitamente la IP local desde donde accedes
 ];
 
 console.log('Orígenes CORS permitidos para Socket.IO:', allowedOrigins);
@@ -370,9 +370,12 @@ app.post('/api/auth/register', authController.register);
 app.post('/api/auth/login', authController.login);
 app.post('/api/auth/forgot-password', authController.forgotPassword);
 app.post('/api/auth/reset-password', authController.resetPassword);
+app.post('/api/auth/verify-email/request', authController.requestEmailVerification);
+app.get('/api/auth/verify-email/:token', authController.verifyEmail);
 app.get('/api/auth/me', authMiddleware.authenticateToken, authController.getMe); // Obtener datos del usuario logueado
 app.post('/api/auth/change-password', authMiddleware.authenticateToken, authController.changePassword); // Cambiar contraseña (logueado)
 
+    
 // --- INICIO: Rutas para gestión de usuarios (REORDENADAS Y MODIFICADAS) ---
 // PRIMERO las rutas más específicas como /profile o /me/avatar
 app.put('/api/users/profile', authMiddleware.authenticateToken, userController.updateProfile); // Usuario actualiza su propio perfil
