@@ -330,9 +330,54 @@ const userController = {
              }
             res.status(500).json({ success: false, message: 'Error interno del servidor al actualizar el avatar.' });
         }
-    }
+    },
     // --- FIN: Nueva Función para Actualizar Avatar ---
 
+    // --- INICIO: Nueva Función para Actualizar Zona Horaria ---
+    updateMyTimezone: async (req, res) => {
+        try {
+            // Verificar autenticación
+            if (!req.user || !req.user._id) {
+                return res.status(401).json({ success: false, message: 'No autenticado.' });
+            }
+
+            // Obtener la zona horaria del cuerpo de la solicitud
+            const { timezone } = req.body;
+
+            // Validación básica
+            if (!timezone || typeof timezone !== 'string' || timezone.trim() === '') {
+                return res.status(400).json({ success: false, message: 'Se requiere una zona horaria válida.' });
+            }
+
+            // Actualizar directamente en la base de datos
+            const updatedUser = await User.findByIdAndUpdate(
+                req.user._id,
+                { timezone: timezone.trim() },
+                { new: true, runValidators: true }
+            ).select('timezone');
+
+            if (!updatedUser) {
+                return res.status(404).json({ success: false, message: 'Usuario no encontrado después de la actualización.' });
+            }
+
+            // Responder con éxito
+            res.json({
+                success: true,
+                message: 'Zona horaria actualizada correctamente.',
+                timezone: updatedUser.timezone
+            });
+
+        } catch (error) {
+            console.error('Error al actualizar zona horaria:', error);
+            if (error.name === 'ValidationError') {
+                const messages = Object.values(error.errors).map(val => val.message);
+                const errorMessage = messages.join('. ');
+                return res.status(400).json({ success: false, message: `Error de validación: ${errorMessage}` });
+            }
+            res.status(500).json({ success: false, message: 'Error interno del servidor al actualizar la zona horaria.' });
+        }
+    }
+    
 };
 
 module.exports = userController;

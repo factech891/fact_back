@@ -33,7 +33,7 @@ const authController = {
                 return res.status(400).json({ success: false, message: 'Ya existe un usuario registrado con este email.' });
             }
 
-            // Crear nueva compañía (asegurando valores por defecto si no vienen)
+            // Crear nueva compañía (añadiendo timezone)
             const newCompany = new Company({
                 nombre: company.nombre,
                 rif: company.rif,
@@ -42,19 +42,21 @@ const authController = {
                 estado: company.estado || '',
                 telefono: company.telefono || '',
                 email: company.email,
+                timezone: company.timezone || 'UTC', // Usar la zona horaria proporcionada o UTC por defecto
                 // La suscripción se inicializa con los defaults del modelo (trial, etc.)
             });
             const savedCompany = await newCompany.save();
             console.log(`[Register] Compañía creada con ID: ${savedCompany._id}`);
 
-            // Crear usuario administrador asociado
+            // Crear usuario administrador asociado (añadiendo timezone)
             const adminUser = new User({
                 nombre: user.nombre,
                 email: user.email,
                 password: user.password, // Hashing ocurre en pre-save hook
                 companyId: savedCompany._id,
                 role: 'admin', // Rol por defecto para el primer usuario
-                active: true // Activo por defecto
+                active: true, // Activo por defecto
+                timezone: company.timezone || 'UTC', // Heredar de la compañía
             });
             const savedUser = await adminUser.save();
             console.log(`[Register] Usuario admin creado con ID: ${savedUser._id} para Compañía ${savedCompany._id}`);

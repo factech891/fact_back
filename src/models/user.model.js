@@ -54,8 +54,13 @@ const userSchema = new Schema({
         required: false, // No es obligatorio que el usuario elija uno
         trim: true,
         default: defaultAvatarUrl // Por defecto, mostramos el primer avatar
-    }
+    },
     // --- FIN: Campo Nuevo Añadido ---
+    timezone: {
+        type: String,
+        default: '', // Sin valor predeterminado fijo
+        required: false // Opcional a nivel usuario
+    }
 }, { timestamps: true });
 
 // Método pre-save para hash de contraseña
