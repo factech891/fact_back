@@ -1,41 +1,68 @@
 // controllers/platform-admin.controller.js
 const Company = require('../models/company.model');
 const User = require('../models/user.model');
-const Subscription = require('../models/subscription.model'); // Asegúrate que estos modelos existan y las rutas sean correctas
+const Subscription = require('../models/subscription.model');
 const Invoice = require('../models/invoice.model');
 const Client = require('../models/client.model');
 const Product = require('../models/product.model');
-// --- Inicio Modificación: Importar dependencias para notificación ---
 const notificationService = require('../services/notification.service');
-// Acceder a la función global de forma segura
-// const emitCompanyNotification = global.emitCompanyNotification; // Eliminado según modificación
-const socketService = require('../services/socket.service'); // Añadido según modificación
-// --- Fin Modificación: Importar dependencias para notificación ---
-
+const socketService = require('../services/socket.service');
+const mongoose = require('mongoose'); // Añadido para trabajar con ObjectId
 
 const platformAdminController = {
-    // Obtener estadísticas globales
+    // Obtener estadísticas globales - CORREGIDO
     getDashboardStats: async (req, res) => {
         try {
-            // Contar compañías por estado de suscripción
-            const companiesCount = await Company.countDocuments();
-            const trialCompanies = await Company.countDocuments({'subscription.status': 'trial'});
-            const activeCompanies = await Company.countDocuments({'subscription.status': 'active'});
-            const expiredCompanies = await Company.countDocuments({'subscription.status': 'expired'});
-            const cancelledCompanies = await Company.countDocuments({'subscription.status': 'cancelled'});
+            // ID de la compañía del sistema a excluir
+            const systemCompanyId = '6810bdec7555a357cabbe6b0';
 
-            // Contar usuarios
+            // Consulta para contar empresas excluyendo la del sistema
+            const companiesCount = await Company.countDocuments({
+                _id: { $ne: new mongoose.Types.ObjectId(systemCompanyId) } // Corregido
+            });
+
+            // Contar por estado de suscripción - excluyendo Sistema FactTech
+            const trialCompanies = await Company.countDocuments({
+                _id: { $ne: new mongoose.Types.ObjectId(systemCompanyId) }, // Corregido
+                'subscription.status': 'trial'
+            });
+
+            const activeCompanies = await Company.countDocuments({
+                _id: { $ne: new mongoose.Types.ObjectId(systemCompanyId) }, // Corregido
+                'subscription.status': 'active' // Solo empresas con suscripción activa
+            });
+
+            const expiredCompanies = await Company.countDocuments({
+                _id: { $ne: new mongoose.Types.ObjectId(systemCompanyId) }, // Corregido
+                'subscription.status': 'expired'
+            });
+
+            const cancelledCompanies = await Company.countDocuments({
+                _id: { $ne: new mongoose.Types.ObjectId(systemCompanyId) }, // Corregido
+                'subscription.status': 'cancelled'
+            });
+
+            // Obtener usuarios (excluyendo al admin si es necesario)
             const usersCount = await User.countDocuments();
 
-            // Obtener compañías con trial por expirar (próximos 7 días)
+            // Períodos de prueba por expirar
             const now = new Date();
             const nextWeek = new Date();
             nextWeek.setDate(now.getDate() + 7);
 
             const expiringTrials = await Company.find({
+                _id: { $ne: new mongoose.Types.ObjectId(systemCompanyId) }, // Corregido
                 'subscription.status': 'trial',
-                'subscription.trialEndDate': { $gte: now, $lt: nextWeek } // Corregido: usar $gte para incluir hoy
+                'subscription.trialEndDate': { $gte: now, $lt: nextWeek }
             }).select('nombre _id subscription.trialEndDate').lean();
+
+            // Logs para depuración
+            console.log(`[Stats] Total empresas (sin sistema): ${companiesCount}`);
+            console.log(`[Stats] Empresas en trial: ${trialCompanies}`);
+            console.log(`[Stats] Empresas con suscripción activa: ${activeCompanies}`);
+            console.log(`[Stats] Empresas expiradas: ${expiredCompanies}`);
+            console.log(`[Stats] Empresas canceladas: ${cancelledCompanies}`);
+            console.log(`[Stats] Total usuarios: ${usersCount}`);
 
             res.json({
                 success: true,
@@ -66,17 +93,16 @@ const platformAdminController = {
         }
     },
 
-    // Listar todas las compañías
+    // Listar todas las compañías (sin cambios)
     listCompanies: async (req, res) => {
         try {
             const companies = await Company.find()
-                .select('_id nombre rif email active subscription createdAt changeHistory') // Incluir changeHistory si se usa DetailPanel
+                .select('_id nombre rif email active subscription createdAt changeHistory')
                 .sort('-createdAt')
                 .lean();
 
             res.json({
                 success: true,
-                // Mapear para asegurar estructura consistente y añadir historial si existe
                 companies: companies.map(company => ({
                     id: company._id,
                     name: company.nombre,
@@ -88,7 +114,6 @@ const platformAdminController = {
                     trialEndDate: company.subscription?.trialEndDate,
                     subscriptionEndDate: company.subscription?.subscriptionEndDate,
                     createdAt: company.createdAt,
-                    // Pasar historial para DetailPanel (si existe)
                     changeHistory: company.changeHistory || []
                 }))
             });
@@ -101,14 +126,13 @@ const platformAdminController = {
         }
     },
 
-    // Extender o reducir período de prueba de una compañía
+    // Extender o reducir período de prueba de una compañía (sin cambios)
     extendTrial: async (req, res) => {
         try {
             const { companyId, days } = req.body;
-            const adminUserId = req.user.userId; // Obtener ID del admin autenticado
-            const adminName = req.user.name || 'Admin Plataforma'; // Obtener nombre del admin
+            const adminUserId = req.user.userId;
+            const adminName = req.user.name || 'Admin Plataforma';
 
-            // Validación
             if (!companyId || days === undefined || !Number.isInteger(days) || days === 0) {
                 return res.status(400).json({ success: false, message: 'ID de compañía y número de días diferente de cero requeridos' });
             }
@@ -128,9 +152,9 @@ const platformAdminController = {
             if (company.subscription.status === 'trial' && company.subscription.trialEndDate) {
                 newTrialEndDate = new Date(company.subscription.trialEndDate);
             } else {
-                newTrialEndDate = new Date(); // Base calculation on today if not in trial
+                newTrialEndDate = new Date();
                 if (days > 0) {
-                    company.subscription.status = 'trial'; // Mark as trial if extending from non-trial state
+                    company.subscription.status = 'trial';
                     changeType = 'Inicio/Extensión Prueba';
                 }
             }
@@ -141,29 +165,27 @@ const platformAdminController = {
 
             if (newTrialEndDate < now) {
                 company.subscription.status = 'expired';
-                company.subscription.trialEndDate = now; // Set expiration to now
+                company.subscription.trialEndDate = now;
                 trialExpiredDueToPastDate = true;
                 message = `Suscripción de prueba de ${company.nombre} marcada como expirada (fecha resultante pasada).`;
-                changeType = 'Expiración Forzada Prueba'; // Specific type for this case
-                newTrialEndDate = now; // The actual end date is now
+                changeType = 'Expiración Forzada Prueba';
+                newTrialEndDate = now;
             } else {
                 company.subscription.trialEndDate = newTrialEndDate;
-                if (days > 0) company.subscription.status = 'trial'; // Ensure status is trial if days > 0
+                if (days > 0) company.subscription.status = 'trial';
             }
 
-            // Añadir registro al historial de cambios
             const historyEntry = {
                 timestamp: new Date(),
                 adminId: adminUserId,
                 adminName: adminName,
                 type: changeType,
-                days: days, // Guardar los días añadidos/quitados
+                days: days,
                 originalDate: originalTrialEndDate,
                 newDate: newTrialEndDate,
                 notes: trialExpiredDueToPastDate ? 'La fecha calculada estaba en el pasado.' : `Modificación manual de ${days} días.`
             };
 
-            // Inicializar changeHistory si no existe
             if (!Array.isArray(company.changeHistory)) {
                 company.changeHistory = [];
             }
@@ -191,7 +213,7 @@ const platformAdminController = {
         }
     },
 
-    // Cambiar estado de suscripción de una compañía (puede necesitar historial también)
+    // Cambiar estado de suscripción de una compañía (sin cambios)
     changeSubscriptionStatus: async (req, res) => {
         try {
             const { companyId, status } = req.body;
@@ -215,7 +237,7 @@ const platformAdminController = {
 
             company.subscription.status = status;
 
-             if (status === 'active') {
+            if (status === 'active') {
                 if (!company.subscription.subscriptionStartDate) company.subscription.subscriptionStartDate = new Date();
                 if (!company.subscription.subscriptionEndDate) {
                     const endDate = new Date(); endDate.setFullYear(endDate.getFullYear() + 1);
@@ -223,29 +245,27 @@ const platformAdminController = {
                 }
                 company.subscription.trialEndDate = undefined;
             } else if (status === 'trial') {
-                 if (!company.subscription.trialEndDate || company.subscription.trialEndDate < new Date()) {
-                      const trialEndDate = new Date(); trialEndDate.setDate(trialEndDate.getDate() + 7);
-                      company.subscription.trialEndDate = trialEndDate;
-                 }
-                 company.subscription.subscriptionStartDate = undefined;
-                 company.subscription.subscriptionEndDate = undefined;
+                if (!company.subscription.trialEndDate || company.subscription.trialEndDate < new Date()) {
+                    const trialEndDate = new Date(); trialEndDate.setDate(trialEndDate.getDate() + 7);
+                    company.subscription.trialEndDate = trialEndDate;
+                }
+                company.subscription.subscriptionStartDate = undefined;
+                company.subscription.subscriptionEndDate = undefined;
             }
 
-             // Añadir historial
-             if (originalStatus !== status) {
-                 const historyEntry = {
-                     timestamp: new Date(),
-                     adminId: adminUserId,
-                     adminName: adminName,
-                     type: `Cambio Estado: ${originalStatus || 'Ninguno'} → ${status}`,
-                     originalDate: status === 'active' ? originalSubEndDate : originalTrialEndDate,
-                     newDate: status === 'active' ? company.subscription.subscriptionEndDate : company.subscription.trialEndDate,
-                     notes: `Estado de suscripción cambiado manualmente a ${status}.`
-                 };
-                 if (!Array.isArray(company.changeHistory)) company.changeHistory = [];
-                 company.changeHistory.push(historyEntry);
-             }
-
+            if (originalStatus !== status) {
+                const historyEntry = {
+                    timestamp: new Date(),
+                    adminId: adminUserId,
+                    adminName: adminName,
+                    type: `Cambio Estado: ${originalStatus || 'Ninguno'} → ${status}`,
+                    originalDate: status === 'active' ? originalSubEndDate : originalTrialEndDate,
+                    newDate: status === 'active' ? company.subscription.subscriptionEndDate : company.subscription.trialEndDate,
+                    notes: `Estado de suscripción cambiado manualmente a ${status}.`
+                };
+                if (!Array.isArray(company.changeHistory)) company.changeHistory = [];
+                company.changeHistory.push(historyEntry);
+            }
 
             await company.save();
 
@@ -267,7 +287,7 @@ const platformAdminController = {
         }
     },
 
-    // Activar/desactivar una compañía (puede necesitar historial también)
+    // Activar/desactivar una compañía (sin cambios)
     toggleCompanyActive: async (req, res) => {
         try {
             const { companyId, active } = req.body;
@@ -278,41 +298,44 @@ const platformAdminController = {
                 return res.status(400).json({ success: false, message: 'ID de compañía y estado de activación (true/false) requeridos' });
             }
 
-            // Obtener estado actual antes de actualizar
-            const companyBefore = await Company.findById(companyId).select('active changeHistory').lean();
+            const companyBefore = await Company.findById(companyId).select('active nombre changeHistory').lean(); // Añadido nombre
             if (!companyBefore) {
                 return res.status(404).json({ success: false, message: 'Compañía no encontrada' });
             }
 
-            // Solo actualizar si el estado es diferente
             if (companyBefore.active === active) {
-                 return res.json({
-                     success: true,
-                     message: `La compañía ${companyId} ya estaba ${active ? 'activada' : 'desactivada'}.`,
-                     company: { id: companyId, active: active }
-                 });
+                 // Añadido nombre a mensaje y respuesta
+                return res.json({
+                    success: true,
+                    message: `La compañía ${companyBefore.nombre} ya estaba ${active ? 'activada' : 'desactivada'}.`,
+                    company: { id: companyId, name: companyBefore.nombre, active: active }
+                });
             }
 
-            // Añadir historial
-             const historyEntry = {
-                 timestamp: new Date(),
-                 adminId: adminUserId,
-                 adminName: adminName,
-                 type: `Cambio Acceso: ${companyBefore.active ? 'Activada' : 'Desactivada'} → ${active ? 'Activada' : 'Desactivada'}`,
-                 notes: `Estado de acceso cambiado manualmente a ${active ? 'Activado' : 'Desactivado'}.`
-             };
-             // Asegurar que changeHistory es un array
-             const currentHistory = Array.isArray(companyBefore.changeHistory) ? companyBefore.changeHistory : [];
+            const historyEntry = {
+                timestamp: new Date(),
+                adminId: adminUserId,
+                adminName: adminName,
+                type: `Cambio Acceso: ${companyBefore.active ? 'Activada' : 'Desactivada'} → ${active ? 'Activada' : 'Desactivada'}`,
+                notes: `Estado de acceso cambiado manualmente a ${active ? 'Activado' : 'Desactivado'}.`
+            };
+            // const currentHistory = Array.isArray(companyBefore.changeHistory) ? companyBefore.changeHistory : []; // No es necesario con $push
 
-            // Actualizar el estado y añadir el historial
             const company = await Company.findByIdAndUpdate(
                 companyId,
                 {
                     active: active,
-                    $push: { changeHistory: historyEntry } // Añadir al array de historial
+                    $push: { changeHistory: historyEntry }
                 },
                 { new: true }
-            );
+            ).select('_id nombre active'); // Asegurar que se devuelve el nombre
+
+            // Posible conflicto: El código base original no incluía 'nombre' en la respuesta aquí, pero parece lógico hacerlo.
+            // Manteniendo la estructura de la base para 'message', pero añadiendo 'name' al objeto 'company' de la respuesta si es devuelto por findByIdAndUpdate.
+            // Se asume que el 'company' devuelto por findByIdAndUpdate ahora incluye 'nombre' por el .select()
+            if (!company) { // Chequeo de seguridad
+                return res.status(404).json({success: false, message: "Compañía no encontrada después de intentar actualizar."})
+            }
 
             res.json({
                 success: true,
@@ -329,14 +352,13 @@ const platformAdminController = {
         }
     },
 
-    // --- Inicio Modificación: Nueva función para enviar notificación ---
+    // Enviar notificación (sin cambios)
     sendNotificationToCompany: async (req, res) => {
         try {
-            const { companyId } = req.params; // Obtener ID de la URL
-            const { title, message, type = 'info' } = req.body; // Obtener datos del cuerpo
-            const adminUserId = req.user.userId; // ID del admin que envía (asumiendo que está en req.user por el middleware)
+            const { companyId } = req.params;
+            const { title, message, type = 'info' } = req.body;
+            const adminUserId = req.user.userId;
 
-            // Validación básica
             if (!companyId || !title || !message) {
                 return res.status(400).json({
                     success: false,
@@ -344,27 +366,22 @@ const platformAdminController = {
                 });
             }
 
-            // Verificar si la compañía existe (opcional pero recomendado)
-            const companyExists = await Company.findById(companyId).select('nombre').lean(); // Solo necesitamos saber si existe y el nombre
+            const companyExists = await Company.findById(companyId).select('nombre').lean();
             if (!companyExists) {
                 return res.status(404).json({ success: false, message: 'Compañía no encontrada.' });
             }
 
-            // Crear la notificación usando el servicio
-            // Pasamos el ID del admin como 'createdBy' para saber quién la envió
             const notificationData = {
                 companyId,
-                title: `[FactTech] ${title}`, // Prefijo para identificar notificaciones de admin
+                title: `[FactTech] ${title}`,
                 message,
-                type, // 'info', 'warning', 'success', 'error', etc.
-                createdBy: adminUserId, // Guardar quién la creó
-                isPlatformAdminNotification: true // Marcarla como notificación del admin
+                type,
+                createdBy: adminUserId,
+                isPlatformAdminNotification: true
             };
 
             const newNotification = await notificationService.createNotification(notificationData);
 
-            // Emitir la notificación a la sala de la compañía vía Socket.IO
-            // Reemplazado según modificación
             if (socketService.isInitialized()) {
                 socketService.emitCompanyNotification(companyId.toString(), newNotification);
                 console.log(`Notificación enviada por admin ${adminUserId} a compañía ${companyId}`);
@@ -372,11 +389,10 @@ const platformAdminController = {
                 console.warn('Servicio de Socket no inicializado. No se pudo emitir la notificación en tiempo real.');
             }
 
-            // Responder al frontend
             res.json({
                 success: true,
                 message: `Notificación enviada correctamente a la compañía ${companyExists.nombre}.`,
-                notification: newNotification // Devolver la notificación creada
+                notification: newNotification
             });
 
         } catch (error) {
@@ -387,7 +403,6 @@ const platformAdminController = {
             });
         }
     }
-    // --- Fin Modificación: Nueva función para enviar notificación ---
 };
 
 module.exports = platformAdminController;
