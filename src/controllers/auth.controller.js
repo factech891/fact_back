@@ -74,7 +74,7 @@ const authController = {
                 companyId: savedCompany._id,
                 role: savedUser.role
             };
-            const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '24h' });
+            const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '3h' });
             console.log("[Register] Token JWT generado.");
 
             // Preparar respuesta
