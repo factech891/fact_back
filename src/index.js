@@ -47,12 +47,43 @@ const socketService = require('./services/socket.service'); // Importar el socke
 const app = express();
 const server = http.createServer(app); // Crear servidor HTTP con Express
 
-// --- Configuración de CORS para Socket.IO ---
-// Lista de orígenes permitidos
+// --- Configuración de CORS actualizada ---
+// Determinar si estamos en entorno de producción
+const isProduction = process.env.NODE_ENV === 'production';
+
+// Lista completa de orígenes permitidos (producción y desarrollo)
 const allowedOrigins = [
-    process.env.FRONTEND_URL || 'http://localhost:3000', // Origen desde variable de entorno o localhost:3000
-    'http://192.168.1.47:3000' // Añadir explícitamente la IP local desde donde accedes
+    'https://sistema.facttech.io',     // Dominio principal en producción
+    process.env.FRONTEND_URL || 'http://localhost:3000', // Configuración desde variables de entorno o valor por defecto
+    'http://localhost:3001',           // Puerto alternativo para desarrollo 
+    'http://localhost:5002',           // Puerto del backend
+    'http://192.168.1.47:3000'         // IP local específica que ya estaba en tu configuración
 ];
+
+console.log(`CORS configurado para entorno: ${isProduction ? 'PRODUCCIÓN' : 'DESARROLLO'}`);
+console.log('Orígenes CORS permitidos:', allowedOrigins);
+
+// Función delegada para manejar las solicitudes CORS
+const corsOptionsDelegate = function (req, callback) {
+    let corsOptions;
+    const origin = req.header('Origin');
+    
+    // Permitir solicitudes sin origen (como Postman) o desde orígenes permitidos
+    if (!origin || allowedOrigins.includes(origin)) {
+        corsOptions = { 
+            origin: true,
+            credentials: true,
+            methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+            allowedHeaders: ['Content-Type', 'Authorization']
+        };
+    } else {
+        console.log(`Origen rechazado para CORS: ${origin}`);
+        corsOptions = { origin: false };
+    }
+    callback(null, corsOptions);
+};
+
+// --- Fin configuración CORS actualizada ---
 
 console.log('Orígenes CORS permitidos para Socket.IO:', allowedOrigins);
 
@@ -60,7 +91,7 @@ const io = require('socket.io')(server, {
     cors: {
         origin: function (origin, callback) {
           // Permitir solicitudes sin origen (como Postman o apps móviles) o si el origen está en la lista
-          if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+          if (!origin || allowedOrigins.includes(origin)) {
             callback(null, true);
           } else {
             console.error(`Origen CORS no permitido para Socket.IO: ${origin}`);
@@ -319,15 +350,9 @@ const handleMulterError = (err, req, res, next) => {
 
 
 // --- Middlewares Generales de Express ---
-// Habilitar CORS para todas las rutas HTTP API (diferente de Socket.IO)
-// Configuración más específica si es necesario
-app.use(cors({
-    origin: allowedOrigins, // Reutilizar la lista de orígenes permitidos
-    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'], // Métodos comunes
-    allowedHeaders: ['Content-Type', 'Authorization'], // Cabeceras permitidas
-    credentials: true
-}));
-app.options('*', cors()); // Habilitar pre-flight requests para todas las rutas
+// Aplicar configuración CORS global utilizando el delegado
+app.use(cors(corsOptionsDelegate));
+app.options('*', cors(corsOptionsDelegate)); // Pre-flight para todas las rutas
 
 app.use(express.json()); // Para parsear JSON bodies (application/json)
 app.use(express.urlencoded({ extended: true })); // Para parsear URL-encoded bodies (application/x-www-form-urlencoded)
@@ -372,7 +397,16 @@ app.post('/api/auth/forgot-password', authController.forgotPassword);
 app.post('/api/auth/reset-password', authController.resetPassword);
 app.post('/api/auth/verify-email/request', authController.requestEmailVerification);
 app.get('/api/auth/verify-email/:token', authController.verifyEmail);
-app.get('/api/auth/me', authMiddleware.authenticateToken, authController.getMe); // Obtener datos del usuario logueado
+// Modificación específica para la ruta problemática
+app.get('/api/auth/me', 
+    (req, res, next) => {
+        console.log(`Petición a /api/auth/me desde origen: ${req.header('Origin')}`);
+        next();
+    },
+    cors(corsOptionsDelegate), // Aplicar CORS específico
+    authMiddleware.authenticateToken, 
+    authController.getMe
+);
 app.post('/api/auth/change-password', authMiddleware.authenticateToken, authController.changePassword); // Cambiar contraseña (logueado)
 
     
